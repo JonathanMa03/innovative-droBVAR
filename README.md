@@ -3,6 +3,7 @@
 This repository hosts the  project for `droBVAR` development, A robust Bayesian VAR framework with diffusion-based innovation modeling
 
 **Author:** Jonathan Ma
+
 **Advisor:** Dr. Luhao Zhang
 
 ---
