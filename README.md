@@ -39,10 +39,10 @@ innovative-droBVAR/
 ├── docs/                         
 │   ├── CHANGELOG.md              # Project updates and version history
 │   └── GithubRef.md              # Quick reference for GitHub Usage
-├── refs/                         
-│   └── notes.txt                 # Notes from readings
 ├── drobvar/                      # Package Development
 │   └── main.py                   # Notes from readings
+├── refs/                         
+│   └── notes.txt                 # Notes from readings
 ├── .gitignore                    # Files and folders excluded from Git tracking
 ├── LICENSE                       # Usage license
 └── README.md                     # Project overview 
