@@ -22,7 +22,7 @@ This repository hosts the  project for `droBVAR` development, A robust Bayesian 
 
 ## Methodology
 
-TBD
+TBD [notes here](https://www.overleaf.com/read/ncfnzvcchcbv#a2fb3c)
 
 ---
 
@@ -41,8 +41,12 @@ innovative-droBVAR/
 │   └── GithubRef.md              # Quick reference for GitHub Usage
 ├── drobvar/                      # Package Development
 │   └── main.py                   # Notes from readings
-├── refs/                         
-│   └── notes.txt                 # Notes from readings
+├── refs/                         # My learning journey         
+│   ├── 01_var_mechanics.ipynb    
+│   ├── 02_bvar_mechanics.ipynb    
+│   ├── 03_innovation_modeling.ipynb   
+│   ├── 04_diffusion_residual_generator.ipynb    
+│   └── 05_dro_forecasting.ipynb    
 ├── .gitignore                    # Files and folders excluded from Git tracking
 ├── LICENSE                       # Usage license
 └── README.md                     # Project overview 
