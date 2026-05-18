@@ -227,3 +227,34 @@ logs/
 # Generated PDFs (optional)
 # Uncomment if you do not want compiled PDFs tracked
 # *.pdf
+
+# Project-specific data and outputs
+data/raw/
+data/processed/
+data/external/
+data/simulated/*.npy
+data/simulated/*.npz
+data/simulated/*.csv
+
+results/
+logs/
+
+# Keep folder placeholders if used
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+!data/simulated/.gitkeep
+!logs/.gitkeep
+!results/.gitkeep
+
+# Model checkpoints
+*.pt
+*.pth
+*.ckpt
+
+# Local notebooks / OS junk
+.DS_Store
+*/.DS_Store
+
+# Environment files
+.env

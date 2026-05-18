@@ -1,16 +1,36 @@
 import numpy as np
 
 
-def standardize_residuals(residuals: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Standardize residuals columnwise.
-    """
+def extract_residuals(fit_result: dict) -> np.ndarray:
+    if "residuals" not in fit_result:
+        raise KeyError("fit_result must contain a 'residuals' key.")
+
+    return np.asarray(fit_result["residuals"], dtype=float)
+
+
+def residual_mean_cov(
+    residuals: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    residuals = np.asarray(residuals, dtype=float)
+
+    mean = residuals.mean(axis=0)
+    cov = np.cov(residuals.T)
+
+    return mean, cov
+
+
+def standardize_residuals(
+    residuals: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    residuals = np.asarray(residuals, dtype=float)
+
     mean = residuals.mean(axis=0)
     std = residuals.std(axis=0, ddof=1)
+    std_safe = np.where(std == 0, 1.0, std)
 
-    standardized = (residuals - mean) / std
+    standardized = (residuals - mean) / std_safe
 
-    return standardized, mean, std
+    return standardized, mean, std_safe
 
 
 def unstandardize_residuals(
@@ -21,11 +41,7 @@ def unstandardize_residuals(
     return residuals_standardized * std + mean
 
 
-def residual_summary(residuals: np.ndarray) -> dict:
-    return {
-        "mean": residuals.mean(axis=0),
-        "std": residuals.std(axis=0, ddof=1),
-        "cov": np.cov(residuals.T),
-        "min": residuals.min(axis=0),
-        "max": residuals.max(axis=0),
-    }
+def check_residuals_finite(
+    residuals: np.ndarray,
+) -> bool:
+    return bool(np.all(np.isfinite(residuals)))

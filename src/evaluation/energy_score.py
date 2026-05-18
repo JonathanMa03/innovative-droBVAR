@@ -6,54 +6,57 @@ def energy_score(
     observation: np.ndarray,
 ) -> float:
     """
-    Compute multivariate energy score for one observation.
+    Multivariate energy score for one forecast distribution and one observation.
 
     Parameters
     ----------
-    samples : np.ndarray
-        Forecast samples with shape (n_samples, k).
+    samples:
+        Shape (n_samples, k)
 
-    observation : np.ndarray
-        Observed value with shape (k,).
-
-    Returns
-    -------
-    score : float
+    observation:
+        Shape (k,)
     """
-    samples = np.asarray(samples)
-    observation = np.asarray(observation)
+    samples = np.asarray(samples, dtype=float)
+    observation = np.asarray(observation, dtype=float)
 
-    term_1 = np.mean(np.linalg.norm(samples - observation, axis=1))
+    term_1 = np.mean(
+        np.linalg.norm(samples - observation, axis=1)
+    )
 
     diffs = samples[:, None, :] - samples[None, :, :]
-    term_2 = 0.5 * np.mean(np.linalg.norm(diffs, axis=2))
+
+    term_2 = 0.5 * np.mean(
+        np.linalg.norm(diffs, axis=2)
+    )
 
     return float(term_1 - term_2)
 
 
 def mean_energy_score(
-    paths: np.ndarray,
+    forecast_paths: np.ndarray,
     y_true: np.ndarray,
 ) -> float:
     """
-    Compute average energy score over forecast horizon.
+    Average energy score across forecast horizon.
 
     Parameters
     ----------
-    paths : np.ndarray
+    forecast_paths:
         Shape (n_paths, horizon, k)
 
-    y_true : np.ndarray
+    y_true:
         Shape (horizon, k)
-
-    Returns
-    -------
-    mean_score : float
     """
+    forecast_paths = np.asarray(forecast_paths, dtype=float)
+    y_true = np.asarray(y_true, dtype=float)
+
     horizon = y_true.shape[0]
 
     scores = [
-        energy_score(paths[:, h, :], y_true[h])
+        energy_score(
+            samples=forecast_paths[:, h, :],
+            observation=y_true[h],
+        )
         for h in range(horizon)
     ]
 

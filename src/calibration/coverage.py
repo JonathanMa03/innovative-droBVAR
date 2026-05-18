@@ -7,45 +7,69 @@ def interval_coverage(
     upper: np.ndarray,
 ) -> np.ndarray:
     """
-    Compute empirical interval coverage by variable.
+    Compute empirical prediction interval coverage by variable.
 
     Parameters
     ----------
-    y_true : np.ndarray
-        Shape (n_obs, k) or (horizon, k).
+    y_true:
+        Shape (horizon, k)
 
-    lower : np.ndarray
-        Lower interval bound with same shape.
+    lower:
+        Shape (horizon, k)
 
-    upper : np.ndarray
-        Upper interval bound with same shape.
+    upper:
+        Shape (horizon, k)
 
     Returns
     -------
-    coverage : np.ndarray
-        Coverage rate for each variable, shape (k,).
+    coverage:
+        Shape (k,)
     """
+    y_true = np.asarray(y_true, dtype=float)
+    lower = np.asarray(lower, dtype=float)
+    upper = np.asarray(upper, dtype=float)
+
     inside = (y_true >= lower) & (y_true <= upper)
+
     return inside.mean(axis=0)
 
 
-def average_interval_width(
-    lower: np.ndarray,
-    upper: np.ndarray,
-) -> np.ndarray:
-    """
-    Compute average interval width by variable.
-    """
-    return (upper - lower).mean(axis=0)
-
-
-def rolling_interval_coverage(
+def average_coverage(
     y_true: np.ndarray,
     lower: np.ndarray,
     upper: np.ndarray,
 ) -> float:
+    return float(
+        interval_coverage(y_true, lower, upper).mean()
+    )
+
+
+def coverage_error(
+    empirical_coverage: float,
+    nominal_coverage: float,
+) -> float:
+    return float(empirical_coverage - nominal_coverage)
+
+
+def absolute_coverage_error(
+    empirical_coverage: float,
+    nominal_coverage: float,
+) -> float:
+    return float(abs(empirical_coverage - nominal_coverage))
+
+
+def coverage_by_horizon(
+    y_true: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+) -> np.ndarray:
     """
-    Scalar average coverage across all time points and variables.
+    Compute coverage at each horizon averaged over variables.
+
+    Returns
+    -------
+    coverage:
+        Shape (horizon,)
     """
     inside = (y_true >= lower) & (y_true <= upper)
-    return float(inside.mean())
+    return inside.mean(axis=1)

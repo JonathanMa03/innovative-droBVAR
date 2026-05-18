@@ -1,0 +1,11 @@
+numpy
+pandas
+scipy
+matplotlib
+scikit-learn
+torch
+tqdm
+jupyter
+ipykernel
+python-dotenv
+statsmodels

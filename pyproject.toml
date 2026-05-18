@@ -1,0 +1,37 @@
+[project]
+name = "innovcal"
+version = "0.1.0"
+description = "Diffusion-based innovation modeling for probabilistic forecast calibration and robustness."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Jonathan Ma" }
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "scikit-learn",
+    "torch",
+    "tqdm",
+    "jupyter",
+    "ipykernel",
+    "python-dotenv",
+    "statsmodels",
+]
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
