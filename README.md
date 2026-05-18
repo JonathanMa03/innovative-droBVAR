@@ -1,6 +1,6 @@
-# droBVAR
+# innovcal
 
-This repository hosts the  project for `droBVAR` development, A robust Bayesian VAR framework with diffusion-based innovation modeling
+This repository hosts the development of `innovcal`, a probabilistic forecasting and innovation-modeling framework for studying calibration, robustness, and uncertainty under innovation misspecification.
 
 **Author:** Jonathan Ma
 
@@ -8,46 +8,107 @@ This repository hosts the  project for `droBVAR` development, A robust Bayesian 
 
 ---
 
-**Aim**: To develop a robust Bayesian Vector Autoregression (BVAR) framework for multivariate time-series forecasting that explicitly accounts for distributional uncertainty in innovation processes. The proposed framework integrates Wasserstein distributionally robust optimization (DRO) with diffusion-based generative modeling of VAR residuals, enabling stable forecasting, calibrated uncertainty quantification, and systematic stress testing under distributional shifts and rare events. Rather than assuming Gaussian or parametric innovation distributions, the framework learns a flexible, nonparametric residual law via diffusion processes and constructs ambiguity sets around this learned distribution to evaluate worst-case forecasts and impulse responses.
+## Overview
 
-**Keywords**: _Bayesian Vector Autoregression, Distributionally Robust Optimization, Wasserstein Distance, Diffusion Models, Robust Innovations, Non-Gaussian Shocks, Multivariate Time Series, Uncertainty Quantification, Stress Testing, Bayesian Priors_
+`innovcal` studies the following central research question:
 
----
+> When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?
 
-## Data Source
+The project focuses on diffusion-based innovation modeling within probabilistic forecasting systems. Rather than assuming Gaussian or simple parametric innovation distributions, the framework learns flexible innovation laws directly from forecast residuals using diffusion and score-based generative modeling.
 
-**Dataset:** TBD
+The learned innovation distributions are recursively propagated through forecasting systems to generate probabilistic forecast trajectories, uncertainty bands, and stress scenarios. Robustness is incorporated through Wasserstein-based perturbation analysis, allowing the framework to evaluate forecast sensitivity and calibration degradation under controlled distributional shifts.
 
----
-
-## Methodology
-
-TBD [notes here](https://www.overleaf.com/read/ncfnzvcchcbv#a2fb3c)
+The project is designed around modular forecasting, innovation, robustness, and calibration components, allowing different forecasting systems and innovation models to be compared within a unified experimental framework.
 
 ---
 
+## Core Workflow
 
-## Structure
+The framework follows the workflow:
 
-```text
-innovative-droBVAR/
-├── code/                        
-│   └── requirements.txt          # dependencies
-├── data/
-│   └── raw/                      # Immutable input datasets
-│   └── cleaned/                  # Versions of cleaned data
-├── docs/                         
-│   ├── CHANGELOG.md              # Project updates and version history
-│   └── GithubRef.md              # Quick reference for GitHub Usage
-├── drobvar/                      # Package Development
-│   └── main.py                   # Notes from readings
-├── refs/                         # My learning journey         
-│   ├── 01_var_mechanics.ipynb    
-│   ├── 02_bvar_mechanics.ipynb    
-│   ├── 03_innovation_modeling.ipynb   
-│   ├── 04_diffusion_residual_generator.ipynb    
-│   └── 05_dro_forecasting.ipynb    
-├── .gitignore                    # Files and folders excluded from Git tracking
-├── LICENSE                       # Usage license
-└── README.md                     # Project overview 
-```
+1. Fit a forecasting system to observed time-series data  
+2. Extract forecast residuals as empirical innovation proxies  
+3. Learn flexible innovation distributions using diffusion models  
+4. Generate synthetic future innovations through diffusion sampling  
+5. Propagate sampled innovations recursively through the forecasting system  
+6. Generate probabilistic forecast trajectories  
+7. Evaluate calibration, uncertainty quality, and robustness under perturbation  
+
+The current project primarily studies:
+- controlled stochastic systems,
+- VAR forecasting systems,
+- DeepAR probabilistic forecasting models,
+- financial and macroeconomic forecasting environments.
+
+---
+
+## Current Methodological Components
+
+### Forecasting Models
+
+- Vector Autoregression (VAR)
+- DeepAR probabilistic forecasting
+
+### Innovation Models
+
+- Gaussian innovations
+- Bootstrap residual resampling
+- Student-$t$ innovations
+- Diffusion-based innovations
+
+### Robustness and Perturbation
+
+- Wasserstein perturbation analysis
+- Stress-scenario generation
+- Distributional sensitivity diagnostics
+- Tail-risk perturbation analysis
+
+### Calibration and Forecast Evaluation
+
+- Predictive interval coverage
+- Calibration curves
+- Probability Integral Transform (PIT)
+- Expected Calibration Error (ECE)
+- Continuous Ranked Probability Score (CRPS)
+- Energy Score
+- Log Predictive Density
+
+---
+
+## Research Direction
+
+The primary focus of the project is diffusion-based innovation modeling, with robustness incorporated through Wasserstein perturbation analysis and probabilistic forecast trajectories generated by recursively propagating learned innovation samples through forecasting systems.
+
+The central objective is not only improving point forecasting accuracy, but understanding how innovation modeling affects:
+- probabilistic forecast calibration,
+- uncertainty quantification,
+- robustness under misspecification,
+- and tail-risk behavior under distributional shift.
+
+---
+
+## Planned Extensions
+
+### Adaptive Recursive Robust Diffusion Forecasting
+
+A planned future extension is conditional or adaptive innovation modeling, where innovation distributions depend dynamically on the forecast state, latent regime, or recent uncertainty structure. Rather than learning a single global innovation distribution, the framework would model conditional innovation laws of the form
+
+$$
+p(u_{t+h} \mid \mathcal{F}_t),
+$$
+
+allowing innovations to adapt recursively during forecast generation.
+
+This would extend the framework toward adaptive recursive robust diffusion forecasting.
+
+### Medical Imaging and Uncertainty-Aware Imaging Systems
+
+Another planned extension is applying the framework to uncertainty-aware medical imaging systems. In this setting, diffusion-based residual modeling and robustness analysis could be applied to imaging uncertainty, segmentation variability, reconstruction error, and distributional shift in medical image analysis tasks such as ophthalmic imaging and OCT analysis.
+
+The broader goal is to generalize the framework from time-series innovation modeling toward modular uncertainty modeling across forecasting and imaging systems.
+
+---
+
+## Status
+
+This repository is currently under active research and development.
