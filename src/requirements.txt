@@ -1,8 +1,0 @@
-numpy
-pandas
-matplotlib
-scikit-learn
-numPyro
-pyMC
-
-# pip install -r requirements.txt

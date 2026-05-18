@@ -1,0 +1,266 @@
+\documentclass[12pt,oneside]{book}
+
+% =========================================================
+% Page Layout and Typography
+% =========================================================
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{setspace}
+\usepackage{parskip}
+
+% =========================================================
+% Mathematics
+% =========================================================
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{bm}
+\usepackage{bbm}
+\usepackage{mathrsfs}
+\usepackage{dsfont}
+
+% =========================================================
+% Tables and Figures
+% =========================================================
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xltabular}
+\usepackage{multirow}
+
+% =========================================================
+% Algorithms
+% =========================================================
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+
+% =========================================================
+% Code Blocks
+% =========================================================
+\usepackage{xcolor}
+\usepackage{listings}
+
+\definecolor{codegray}{gray}{0.95}
+\definecolor{codeborder}{gray}{0.75}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{codegray},
+    frame=single,
+    rulecolor=\color{codeborder},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    tabsize=4,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\bfseries,
+    commentstyle=\itshape,
+    stringstyle=\ttfamily
+}
+
+\lstset{style=pythonstyle}
+
+% =========================================================
+% Lists and Section Formatting
+% =========================================================
+\usepackage{enumitem}
+\setlist[itemize]{topsep=4pt,itemsep=2pt}
+\setlist[enumerate]{topsep=4pt,itemsep=2pt}
+
+% =========================================================
+% Hyperlinks
+% =========================================================
+\usepackage{xurl}
+\usepackage[
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+]{hyperref}
+
+% =========================================================
+% Theorem Environments
+% =========================================================
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{example}{Example}[chapter]
+\newtheorem{remark}{Remark}[chapter]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{proposition}{Proposition}[chapter]
+\newtheorem{lemma}{Lemma}[chapter]
+\newtheorem{corollary}{Corollary}[chapter]
+
+% =========================================================
+% Useful Commands
+% =========================================================
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\given}{\,|\,}
+\newcommand{\ind}{\mathbbm{1}}
+
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+
+\newcommand{\KL}{\operatorname{KL}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\relu}{\operatorname{ReLU}}
+\newcommand{\sigmoid}{\operatorname{sigmoid}}
+
+% =========================================================
+% Title
+% =========================================================
+\title{Thesis Reference Notes}
+\author{Jonathan Y. Ma}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+\section{Research Question}
+
+The central scientific question of this thesis is:
+
+\begin{quote}
+When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?
+\end{quote}
+
+This thesis studies how assumptions regarding the innovation process affect probabilistic forecasting performance under non-Gaussian and distributionally shifted stochastic environments. Classical forecasting systems often rely on Gaussian or simple parametric innovation assumptions, which may fail under heavy tails, skewness, heteroskedasticity, structural breaks, or regime-dependent behavior. The primary methodological contribution of this work is diffusion-based innovation modeling, where flexible generative models are used to learn empirical innovation distributions directly from forecast residuals. Robustness enters as a secondary component through Wasserstein-based perturbation analysis, allowing the sensitivity and stability of probabilistic forecasts to be evaluated under controlled distributional shifts.
+
+\section{Core Workflow}
+
+The proposed framework begins with observed multivariate time-series data arising either from simulated stochastic systems or real financial forecasting environments. Simulated systems are used to construct controlled forecasting environments with known innovation structures, while real-data applications provide empirical validation under naturally occurring non-Gaussian behavior. Forecasting systems considered in this thesis include both a classical Vector Autoregression (VAR) model and a modern deep-learning forecasting framework based on DeepAR.
+
+For the classical forecasting setting, the VAR model is defined as
+
+$$
+y_t
+=
+A_1 y_{t-1}
++
+A_2 y_{t-2}
++
+\cdots
++
+A_p y_{t-p}
++
+u_t,
+$$
+
+where $u_t$ denotes the innovation process. In parallel, a DeepAR-style recurrent probabilistic forecasting model is used as a deep-learning benchmark capable of modeling conditional predictive distributions through recurrent neural network dynamics.
+
+After fitting the forecasting system, residuals are extracted and treated as empirical innovation proxies. Specifically, residuals are computed as
+
+$$
+\hat{u}_t
+=
+y_t - \hat{y}_t,
+$$
+
+where $\hat{y}_t$ denotes the fitted forecast from the forecasting model. These residuals are not assumed to represent the true latent innovation process exactly, but instead serve as observable approximations of the innovations driving the stochastic system.
+
+The primary methodological contribution of the thesis is to model the innovation distribution directly using diffusion-based generative models. Rather than assuming
+
+$$
+u_t
+\sim
+\mathcal{N}(0,\Sigma),
+$$
+
+the innovation process is learned flexibly from the empirical residual distribution using denoising diffusion and score-matching methods. The diffusion model is trained through a forward noising process of the form
+
+$$
+q(x_t \mid x_0)
+=
+\mathcal{N}
+\left(
+\sqrt{\bar{\alpha}_t}x_0,
+(1-\bar{\alpha}_t)I
+\right),
+$$
+
+while a neural network
+
+$$
+\epsilon_\theta(x_t,t)
+$$
+
+is trained to estimate the injected noise term through denoising score matching. Once trained, the diffusion model generates synthetic innovation samples that represent simulated future shocks.
+
+These generated innovations are recursively propagated through the forecasting system in order to generate probabilistic forecast trajectories. In the VAR setting, probabilistic forecasts are generated through recursive simulation according to
+
+$$
+y_{t+h}
+=
+A_1 y_{t+h-1}
++
+\cdots
++
+A_p y_{t+h-p}
++
+u_{t+h}^{(s)},
+$$
+
+where $u_{t+h}^{(s)}$ denotes a sampled innovation from the learned diffusion-based innovation distribution. Repeated Monte Carlo simulation produces predictive distributions, forecast trajectories, uncertainty bands, and tail-risk scenarios.
+
+The resulting forecast distributions are evaluated primarily through probabilistic calibration and uncertainty quality rather than point forecasting accuracy alone. Calibration quality is evaluated using Expected Calibration Error (ECE), Probability Integral Transform (PIT) diagnostics, predictive interval coverage, and calibration curves. Probabilistic forecast quality is further evaluated using energy scores, Continuous Ranked Probability Scores (CRPS), and log predictive density. These metrics allow the thesis to systematically compare diffusion-based innovation models against Gaussian, bootstrap, and heavy-tailed innovation assumptions under varying forms of innovation misspecification.
+
+To evaluate robustness under distributional uncertainty, the learned innovation distribution and generated forecast trajectories are subjected to Wasserstein-based perturbation analysis. Specifically, perturbations are introduced either through direct trajectory perturbation or through perturbations of the learned innovation distribution within Wasserstein ambiguity sets of the form
+
+$$
+\mathcal{U}_\epsilon(\hat{P})
+=
+\left\{
+Q
+:
+W(Q,\hat{P})
+\le
+\epsilon
+\right\},
+$$
+
+where $W(\cdot,\cdot)$ denotes the Wasserstein distance and $\hat{P}$ denotes the learned innovation distribution. The objective is to evaluate forecast sensitivity, robustness degradation, calibration stability, and tail-risk behavior under controlled perturbations and stress scenarios.
+
+\section{Future Extension}
+
+A natural future extension of this work is adaptive recursive robust diffusion forecasting. In the current framework, the innovation distribution is learned globally from residual data and remains fixed during forecast generation. A more advanced extension would instead learn conditional innovation distributions of the form
+
+$$
+p(u_{t+h} \mid \mathcal{F}_t),
+$$
+
+where $\mathcal{F}_t$ denotes the current forecast state, latent regime information, volatility conditions, or recent innovation history. Such a framework would allow innovations to adapt dynamically to changing system conditions, resulting in adaptive recursive probabilistic forecasting systems capable of state-dependent uncertainty generation and robustness-aware trajectory simulation.
+
+\section{TL;DR}
+RQ: When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?
+
+Core Workflow:
+\begin{itemize}
+\item start with observed time series through either financial returns or simulated systems and fit a VAR and DeepAR
+\item extract residuals treated as empirical innovation proxies
+\item train a diffusion model on the residual distribution via denoising diffusion/score matching
+\item sample new innovations from the diffusion model, which become simulated future shocks
+\item feed sampled innovations back into the forecasting recursion
+\item generate probabilistic forecast trajectories
+\item evaluate calibration and forecast quality using ECE, PIT, and energy scores
+\item perturb the learned distribution or generated trajectories and evaluate tail sensitivity and robustness degradation
+\end{itemize}
+Future extensions:
+\begin{itemize}
+    \item extend the project to adaptive recursive robust diffusion forecasting
+    \item apply to medical imaging after time series
+\end{itemize}
+\section{Data Generation} 
+
+\end{document}
