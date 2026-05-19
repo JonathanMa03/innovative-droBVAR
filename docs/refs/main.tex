@@ -131,11 +131,9 @@
 \part{Project Overview}
 \section{Research Question}
 
-The central scientific question of this thesis is:
+The central scientific question of this thesis is: 
 
-\begin{quote}
-When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?
-\end{quote}
+\emph{When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?}
 
 This thesis studies how assumptions regarding the innovation process affect probabilistic forecasting performance under non-Gaussian and distributionally shifted stochastic environments. Classical forecasting systems often rely on Gaussian or simple parametric innovation assumptions, which may fail under heavy tails, skewness, heteroskedasticity, structural breaks, or regime-dependent behavior. The primary methodological contribution of this work is diffusion-based innovation modeling, where flexible generative models are used to learn empirical innovation distributions directly from forecast residuals. Robustness enters as a secondary component through Wasserstein-based perturbation analysis, allowing the sensitivity and stability of probabilistic forecasts to be evaluated under controlled distributional shifts.
 
@@ -191,14 +189,7 @@ q(x_t \mid x_0)
 \right),
 $$
 
-while a neural network
-
-$$
-\epsilon_\theta(x_t,t)
-$$
-
-is trained to estimate the injected noise term through denoising score matching. Once trained, the diffusion model generates synthetic innovation samples that represent simulated future shocks.
-
+while a neural network $\epsilon_\theta(x_t,t)$ is trained to estimate the injected noise term through denoising score matching. Once trained, the diffusion model generates synthetic innovation samples that represent simulated future shocks.
 These generated innovations are recursively propagated through the forecasting system in order to generate probabilistic forecast trajectories. In the VAR setting, probabilistic forecasts are generated through recursive simulation according to
 
 $$
@@ -244,23 +235,22 @@ $$
 where $\mathcal{F}_t$ denotes the current forecast state, latent regime information, volatility conditions, or recent innovation history. Such a framework would allow innovations to adapt dynamically to changing system conditions, resulting in adaptive recursive probabilistic forecasting systems capable of state-dependent uncertainty generation and robustness-aware trajectory simulation.
 
 \section{Summary}
-RQ: When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?
+When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?
 
-Core Workflow:
-\begin{itemize}
-\item start with observed time series through either financial returns or simulated systems and fit a VAR and DeepAR
-\item extract residuals treated as empirical innovation proxies
-\item train a diffusion model on the residual distribution via denoising diffusion/score matching
-\item sample new innovations from the diffusion model, which become simulated future shocks
-\item feed sampled innovations back into the forecasting recursion
-\item generate probabilistic forecast trajectories
-\item evaluate calibration and forecast quality using ECE, PIT, and energy scores
-\item perturb the learned distribution or generated trajectories and evaluate tail sensitivity and robustness degradation
-\end{itemize}
+\begin{enumerate}
+\item Start with observed time series (financial returns or simulated data) and fit a VAR and DeepAR
+\item Extract residuals treated as empirical innovation proxies
+\item Train a diffusion model on the residual distribution via denoising diffusion/score matching
+\item Sample new innovations from the diffusion model, which become simulated future shocks
+\item Feed sampled innovations back into the forecasting recursion
+\item Generate probabilistic forecast trajectories
+\item Evaluate calibration and forecast quality using ECE, PIT, and energy scores
+\item Perturb the learned distribution or generated trajectories and evaluate tail sensitivity and robustness degradation
+\end{enumerate}
 Future extensions:
 \begin{itemize}
     \item extend the project to adaptive recursive robust diffusion forecasting
-    \item apply to medical imaging after time series
+    \item apply to medical imaging through the lenses of stochastic reconstruction error
 \end{itemize}
 \part{Innovation Misspecification and Motivation}
 
@@ -319,10 +309,10 @@ The Gaussian system exhibits relatively stable fluctuations around a constant va
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/01_dgp_eda/raw_dgp_series.png}
+    \includegraphics[width=0.8\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/01_dgp_eda/raw_dgp_series.png}
     \caption{Simulated VAR series under different innovation regimes. All systems share the same autoregressive dynamics while differing only in the innovation distribution.}
     \label{fig:dgp_series}
-    \end{figure}
+\end{figure}
 
 To quantitatively evaluate departures from Gaussianity, several innovation diagnostics were computed including skewness, kurtosis, excess kurtosis, and the Jarque--Bera normality statistic. Table~\ref{tab:innovation_summary} summarizes the average diagnostic values across series within each innovation regime.
 
@@ -362,34 +352,24 @@ where $\hat{A}$ denotes the estimated autoregressive coefficient matrix and $\ha
 
 The estimated residuals are of central importance because they serve as empirical innovation proxies for all subsequent probabilistic forecasting experiments. Rather than modeling the true latent innovations directly, the project studies the distributions that can be recovered from fitted forecasting systems.
 
-For all simulated systems, the fitted VAR models remained stable. The estimated companion matrix eigenvalues satisfied
-
-$$
-\max_i |\lambda_i| < 1,
-$$
-
+For all simulated systems, the fitted VAR models remained stable. The estimated companion matrix eigenvalues satisfied $\max_i |\lambda_i| < 1,$
 ensuring stationary forecast dynamics across all experiments. This is important because it guarantees that subsequent differences in probabilistic forecast behavior arise primarily from innovation modeling rather than from unstable autoregressive dynamics.
 
 Figure~\ref{fig:var_mean_forecasts} displays representative VAR mean forecasts for the simulated systems.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/02_var_deepar_fit/var_mean_forecasts.png}
+\includegraphics[width=0.8\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/02_var_deepar_fit/var_mean_forecasts.png}
 \caption{Representative VAR mean forecasts under different innovation regimes. While the point forecasts remain relatively stable across systems, the innovation structures governing forecast uncertainty differ substantially.}
 \label{fig:var_mean_forecasts}
 \end{figure}
 
-An important observation is that the mean forecasts themselves do not strongly reveal the underlying innovation misspecification. Across all systems, the VAR forecasts revert toward the stationary mean and exhibit broadly similar point forecast behavior. This highlights a central motivation of the thesis:
-
-\begin{quote}
-Point forecast accuracy alone may fail to detect important forms of innovation misspecification that materially affect probabilistic forecast calibration and uncertainty quantification.
-\end{quote}
-
+An important observation is that the mean forecasts themselves do not strongly reveal the underlying innovation misspecification. Across all systems, the VAR forecasts revert toward the stationary mean and exhibit broadly similar point forecast behavior. This highlights a central motivation of the thesis: Point forecast accuracy alone may fail to detect important forms of innovation misspecification that materially affect probabilistic forecast calibration and uncertainty quantification.
 To investigate these effects, residual diagnostics were computed using the fitted VAR residuals. Figure~\ref{fig:residual_qqplots} presents representative QQ plots for the first residual series across all simulated systems.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/03_residuals/residual_qqplots.png}
+\includegraphics[width=0.5\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/03_residuals/residual_qqplots.png}
 \caption{QQ plots for VAR residuals across different innovation regimes. The Gaussian system remains approximately linear, while the remaining systems exhibit substantial tail deviations and nonlinear behavior.}
 \label{fig:residual_qqplots}
 \end{figure}
@@ -417,18 +397,14 @@ Student-$t$ & $-0.215$ & $8.429$ & $5.429$ & $1.30 \times 10^{-57}$ & $-0.017$ \
 \end{table}
 
 Several important observations emerge from these results.
-
-First, the Gaussian residual system remains relatively close to the Gaussian benchmark with kurtosis near $3$ and a comparatively large Jarque--Bera p-value. This confirms that the VAR fitting procedure itself does not artificially introduce substantial non-Gaussian structure.
-
-Second, the remaining systems retain substantial excess kurtosis even after model fitting. In particular, the Student-$t$ system exhibits extreme heavy-tail behavior with average kurtosis exceeding $8$, while the mixture and heteroskedastic systems also display substantial deviations from Gaussianity.
-
-Third, the residual autocorrelation values remain relatively small across systems. This suggests that the fitted VAR models successfully capture the primary linear temporal dependence structure while leaving the remaining misspecification concentrated primarily in the innovation distribution itself.
-
+The Gaussian residual system remains relatively close to the Gaussian benchmark with kurtosis near $3$ and a comparatively large Jarque--Bera p-value. This confirms that the VAR fitting procedure itself does not artificially introduce substantial non-Gaussian structure.
+The remaining systems retain substantial excess kurtosis even after model fitting. In particular, the Student-$t$ system exhibits extreme heavy-tail behavior with average kurtosis exceeding $8$, while the mixture and heteroskedastic systems also display substantial deviations from Gaussianity.
+The residual autocorrelation values remain relatively small across systems. This suggests that the fitted VAR models successfully capture the primary linear temporal dependence structure while leaving the remaining misspecification concentrated primarily in the innovation distribution itself.
 The heteroskedastic system is especially important because its innovation misspecification is not purely marginal. Figure~\ref{fig:rolling_volatility} displays rolling residual volatility estimates for the simulated systems.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/03_residuals/rolling_residual_std.png}
+\includegraphics[width=0.6\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/03_residuals/rolling_residual_std.png}
 \caption{Rolling residual volatility estimates across simulated systems. The heteroskedastic regime exhibits strong volatility clustering and time-varying uncertainty behavior.}
 \label{fig:rolling_volatility}
 \end{figure}
@@ -442,7 +418,6 @@ The next stage of the project investigates whether diffusion-based generative in
 \section{Classical Innovation Models and Their Limitations}
 
 The previous sections established that several simulated systems retain substantial non-Gaussian structure even after fitting stable VAR forecasting models. The next question is therefore whether standard innovation modeling approaches can adequately recover these residual innovation distributions.
-
 To investigate this question, three classical innovation models were fit to the extracted VAR residuals:
 
 \begin{enumerate}
@@ -452,7 +427,6 @@ To investigate this question, three classical innovation models were fit to the 
 \end{enumerate}
 
 These innovation models represent common approaches for generating probabilistic forecast shocks in classical forecasting systems.
-
 Let $\{\hat{\varepsilon}_t\}_{t=1}^n$ denote the fitted VAR residuals. The Gaussian innovation model assumes
 
 $$
@@ -460,7 +434,6 @@ $$
 $$
 
 where $\hat{\mu}$ and $\hat{\Sigma}$ are estimated directly from the residual sample. Under this framework, probabilistic forecast trajectories are generated by repeatedly sampling Gaussian innovations from the fitted covariance structure.
-
 The bootstrap innovation model instead samples directly from the empirical residual distribution,
 
 $$
@@ -468,7 +441,6 @@ $$
 $$
 
 thereby preserving the observed empirical residual structure without imposing a parametric distributional assumption.
-
 The Student-$t$ innovation model introduces heavier tails through the multivariate Student-$t$ distribution,
 
 $$
@@ -476,7 +448,6 @@ $$
 $$
 
 where $\nu$ denotes the degrees of freedom parameter controlling tail heaviness.
-
 For each simulated system, all three innovation models were fit using the same residual samples extracted from the fitted VAR systems. Monte Carlo innovation trajectories were then generated from each fitted innovation model for comparison against the empirical residual distributions.
 
 Figure~\ref{fig:innovation_histograms} compares empirical residual distributions against sampled innovations generated by the classical innovation models.
@@ -484,13 +455,13 @@ Figure~\ref{fig:innovation_histograms} compares empirical residual distributions
 \begin{figure}[H]
     \centering
     
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.4\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/gaussian_innovation_hist.png}
         \caption{Gaussian DGP}
     \end{subfigure}
     \hfill
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.4\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/student_t_innovation_hist.png}
         \caption{Student-$t$ DGP}
@@ -498,13 +469,13 @@ Figure~\ref{fig:innovation_histograms} compares empirical residual distributions
     
     \vspace{0.5em}
     
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.4\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/mixture_innovation_hist.png}
         \caption{Mixture DGP}
     \end{subfigure}
     \hfill
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.4\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/heteroskedastic_innovation_hist.png}
         \caption{Heteroskedastic DGP}
@@ -515,11 +486,8 @@ Figure~\ref{fig:innovation_histograms} compares empirical residual distributions
     \end{figure}
 
 Several important limitations become immediately visible.
-
 The Gaussian innovation model successfully reproduces the approximate shape of the Gaussian residual system but substantially smooths away heavy-tail behavior in the Student-$t$, mixture, and heteroskedastic systems. In particular, the Gaussian approximation fails to reproduce the extreme residual realizations observed in the empirical distributions.
-
 The bootstrap innovation model preserves the empirical residual structure more faithfully because it directly resamples observed innovations. However, the resulting distributions remain finite-sample approximations and exhibit discretization effects in the tails due to repeated reuse of the observed residual vectors.
-
 The Student-$t$ innovation model introduces substantially heavier tails, but does so symmetrically and globally. As a result, it often over-amplifies tail behavior relative to the empirical residual structure while still failing to reproduce more complex nonlinear distributional shapes such as multimodal or regime-switching behavior.
 
 To further examine these differences, QQ plots were constructed for both the empirical residuals and the generated innovation samples. Figure~\ref{fig:innovation_qqplots} presents representative QQ comparisons.
@@ -527,13 +495,13 @@ To further examine these differences, QQ plots were constructed for both the emp
 \begin{figure}[H]
     \centering
     
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.35\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/gaussian_innovation_qq.png}
         \caption{Gaussian DGP}
     \end{subfigure}
     \hfill
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.35\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/student_t_innovation_qq.png}
         \caption{Student-$t$ DGP}
@@ -541,13 +509,13 @@ To further examine these differences, QQ plots were constructed for both the emp
     
     \vspace{0.5em}
     
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.35\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/mixture_innovation_qq.png}
         \caption{Mixture DGP}
     \end{subfigure}
     \hfill
-    \begin{subfigure}{0.48\textwidth}
+    \begin{subfigure}{0.35\textwidth}
         \centering
         \includegraphics[width=\textwidth]{/Users/jonathanma/Desktop/MSEnotes/Masters_Thesis/ThesisProject/innovative-droBVAR/results/figures/04_innovations/heteroskedastic_innovation_qq.png}
         \caption{Heteroskedastic DGP}
@@ -558,13 +526,10 @@ To further examine these differences, QQ plots were constructed for both the emp
     \end{figure}
 
 The Gaussian innovation model produces nearly linear QQ behavior by construction, indicating that it effectively removes higher-order nonlinear structure from the residual distributions. While this may appear visually stable, it also demonstrates an important limitation: Gaussian innovations can underestimate tail risk by collapsing complex residual structure into second-moment approximations alone.
-
 The bootstrap innovation model preserves empirical nonlinearities more effectively, particularly in the mixture and heteroskedastic systems. However, because bootstrap innovations are constrained to previously observed residual realizations, the method lacks the ability to generalize beyond the empirical sample and may inadequately represent rare or previously unseen shock behavior.
-
 The Student-$t$ innovation model captures heavier tails more aggressively but imposes a rigid parametric structure that can substantially distort the empirical innovation geometry. In several systems, the Student-$t$ samples exhibit tail amplification that exceeds the observed residual behavior.
 
 These observations suggest that the challenge of innovation modeling is not merely the introduction of heavier tails, but rather the ability to flexibly learn complex residual distributions while preserving realistic uncertainty structure.
-
 This distinction is especially important for the mixture and heteroskedastic systems. In the mixture regime, the residual distribution exhibits nonlinear tail curvature and asymmetric shock behavior that cannot be adequately represented by Gaussian covariance structure alone. In the heteroskedastic regime, the residual distribution contains strong time-varying volatility behavior that is poorly approximated by static parametric innovations.
 
 The limitations observed in all three classical innovation models motivate the introduction of flexible generative innovation models capable of learning richer residual structures directly from the data. Rather than imposing fixed parametric forms or relying solely on empirical resampling, diffusion-based generative models provide a framework for learning complex innovation distributions through iterative denoising and score-based density estimation.
@@ -572,20 +537,6 @@ The limitations observed in all three classical innovation models motivate the i
 The next section introduces diffusion-based innovation modeling as a flexible generative framework for residual innovation learning and probabilistic forecast generation.
 
 \section{Motivation for Diffusion-Based Innovation Modeling}
-
-The previous sections demonstrated that substantial nonlinear structure remains in the residual innovation distributions even after fitting stable classical VAR forecasting systems. In particular, the Student-$t$, mixture, and heteroskedastic regimes all exhibit persistent departures from Gaussianity including heavy tails, nonlinear tail curvature, volatility clustering, and asymmetric shock behavior.
-
-Classical innovation models partially address these issues but remain fundamentally limited.
-
-Gaussian innovation models rely entirely on first and second moments and therefore cannot recover more complex residual geometry beyond covariance structure alone. As a result, Gaussian innovations tend to smooth away tail structure and underestimate extreme-event behavior.
-
-Bootstrap innovation models preserve empirical residual realizations more faithfully, but they remain constrained to finite observed samples. Consequently, bootstrap methods cannot generalize beyond previously observed shocks and may inadequately characterize rare or previously unseen innovation regimes.
-
-Student-$t$ innovation models introduce heavier tails through a parametric tail mechanism, but impose a rigid global distributional structure. While this can improve robustness to extreme observations, it remains insufficient for modeling multimodal, asymmetric, or temporally varying innovation behavior.
-
-The key challenge is therefore not simply introducing heavier tails, but rather learning flexible residual innovation distributions directly from the data while preserving realistic uncertainty structure.
-
-This motivates the introduction of diffusion-based generative innovation models.
 
 Diffusion models provide a flexible nonparametric framework for learning complex probability distributions through iterative denoising. Rather than specifying a fixed parametric innovation family, diffusion models learn how to progressively transform simple noise distributions into samples that approximate the empirical residual distribution.
 
@@ -615,21 +566,20 @@ $$
 where the neural network parameters $\theta$ are optimized using denoising score matching objectives. Intuitively, the model learns the geometry of the residual innovation distribution by repeatedly predicting and removing injected noise.
 
 In this project, diffusion models are trained directly on residual innovation proxies extracted from the fitted VAR systems. The objective is therefore not unconditional image generation or sequence generation, but rather flexible innovation distribution learning for probabilistic forecasting.
-
 This distinction is important. The diffusion model is not replacing the forecasting backbone itself. Instead, the forecasting architecture remains fixed while the innovation-generation mechanism becomes more flexible.
 
 The forecasting workflow therefore becomes
 
 $$
-\text{time series}
+\text{Data}
 \rightarrow
-\text{VAR fit}
+\text{Fit}
 \rightarrow
-\text{residual extraction}
+\text{Error Extraction}
 \rightarrow
-\text{diffusion innovation learning}
+\text{Learning}
 \rightarrow
-\text{probabilistic forecast generation}.
+\text{Forecast}.
 $$
 
 Under this framework, innovations sampled from the learned diffusion model can be recursively propagated through the forecasting system to generate probabilistic forecast trajectories.
