@@ -1,4 +1,4 @@
-def get_torch_device(prefer_mps: bool = True):
+def get_device(prefer_mps: bool = True):
     """
     Return the best available PyTorch device.
 
