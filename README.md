@@ -18,10 +18,10 @@ Rather than treating calibration as a post-hoc evaluation metric, calibration be
 
 The primary contribution shifts from employing diffusion models to a new learning procedure:
 
-$$\mathcal{L}=\mathcal{L}_{\text{diffusion}}\quad \rightarrow \quad \mathcal{L}=\mathcal{L}_{\text{diffusion}}+\lambda \mathcal{L}{\text{calibration}}$$
+$$\mathcal{L}=\mathcal{L}_{\text{diffusion}}\quad \rightarrow \quad \mathcal{L}=\mathcal{L}_{\text{diffusion}}+\lambda \mathcal{L}_{\text{calibration}}$$
 
 The first iteration will rely on Vector Autoregressions and Recurrent Neural Networks to investigate how CARL affects linear and nonlinear baselines. The innovation models used for testing are a Gaussian baseline, heavy-tail behavior through Student-T, mixture innovaotions, and time-varying innovations. We will investigate variance inflation, tail amplification, mixture contamination, and regime shifts using degradation metrics, and then the framework will be applied to financial return data
 
 ## Long Term Research Vision
 
-The first iteration develops a calibration-aware diffusion implementation for the broader CARL (Calibration-Aware Residual Learning) Framework where the learner can be replaced with mflow models or Bayesian nonparametric models
+The first iteration develops a calibration-aware diffusion implementation for the broader CARL (Calibration-Aware Residual Learning) Framework where the learner can be replaced with mflow models or Bayesian nonparametric models. Also will consider extensions to Images and computer vision, as the ultimate goal is to become model-agnostic.
