@@ -318,22 +318,14 @@ Step 8: Update diffusion model.
 
 VAR
 
-Motivation:
-
-* interpretable
-* linear
-* statistical baseline
+Motivation: interpretable, linear, statistical baseline
 
 
 \subsection{Deep Benchmark}
 
 RNN / DeepAR
 
-Motivation:
-
-* nonlinear forecasting
-* representation learning
-* modern forecasting baseline
+Motivation: nonlinear forecasting, representation learning, modern forecasting baseline
 
 
 Evaluate whether calibration-aware residual learning is effective across fundamentally different forecasting architectures.
@@ -384,18 +376,9 @@ $
 
 Experimental Comparisons
 
-Forecast Models
+Forecast Models: VAR, RNN
 
-* VAR
-* RNN
-
-Residual Models
-
-* Gaussian
-* Student-t
-* Bootstrap
-* Standard Diffusion
-* Calibration-Aware Diffusion
+Residual Models: Gaussian, Student-t, Bootstrap, Standard Diffusion, Calibration-Aware Diffusion
 
 Training Schemes
 
@@ -420,53 +403,26 @@ $
 
 \section{Calibration Evaluation}
 
-Coverage
+Coverage: Empirical Coverage, Coverage Error
 
-* Empirical Coverage
-* Coverage Error
+Reliability: ECE, Reliability Diagrams, PIT Histograms
 
-Reliability
+Probabilistic Forecast Quality: CRPS, Energy Score, Log Predictive Density
 
-* ECE
-* Reliability Diagrams
-* PIT Histograms
-
-Probabilistic Forecast Quality
-
-* CRPS
-* Energy Score
-* Log Predictive Density
-
-Sharpness
-
-* Average Interval Width
-* Sharpness Score
+Sharpness: Average Interval Width, Sharpness Score
 
 \section{Robustness Analysis}
 
 Distributional Perturbations
 
-Investigate:
+Investigate: variance inflation, tail amplification, mixture contamination, regime shifts
 
-* variance inflation
-* tail amplification
-* mixture contamination
-* regime shifts
-
-Metrics
-
-* calibration degradation
-* coverage degradation
-* sharpness degradation
+Metrics, calibration degradation, coverage degradation, sharpness degradation
 
 \part{Real Data Case Study}
 
 \section{Empirical Application}
 
-Candidate Domains
-
-* Financial returns
-* Macroeconomic indicators
-* Biological time series
+Candidate Domain: Financial returns
 
 \end{document}
