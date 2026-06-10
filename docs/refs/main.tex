@@ -132,29 +132,44 @@
 \part{Foundations}
 \section{Introduction}
 
-this is a test of attrition
-
 \subsection*{Motivation}
-Forecast uncertainty depends heavily on residual behavior.
 
-Diffusion models can learn complex residual distributions.
+Modern forecasting systems increasingly provide probabilistic predictions rather than point forecasts alone. In applications involving decision-making under uncertainty, the quality of the uncertainty estimate is often as important as the quality of the prediction itself. A forecast distribution that is systematically overconfident or underconfident can lead to poor downstream decisions even when point forecasts are accurate.
 
-Existing diffusion methods do not optimize for calibration.
+For most forecasting models, uncertainty is determined by assumptions placed on the residual or innovation process. Classical models such as VARs typically assume Gaussian innovations, while modern deep forecasting systems often impose simple parametric likelihoods. These assumptions can be restrictive when residual distributions exhibit heavy tails, heteroskedasticity, multimodality, or other forms of distributional misspecification.
 
-Calibration is essential for trustworthy uncertainty quantification.
+Recent advances in diffusion and score-based generative modeling provide a flexible mechanism for learning complex residual distributions directly from data. Rather than imposing a fixed distributional family, diffusion models can learn highly non-Gaussian uncertainty structures and generate realistic residual samples for probabilistic forecasting. However, existing diffusion-based forecasting methods are generally optimized to reproduce observed distributions rather than to produce calibrated uncertainty estimates.
 
-A calibration-aware training paradigm may improve uncertainty quality.
+Calibration measures the agreement between predicted probabilities and observed frequencies. Well-calibrated uncertainty estimates are essential for trustworthy forecasting, uncertainty quantification, risk assessment, and downstream decision-making. While calibration is routinely used as an evaluation criterion, it is rarely incorporated directly into the training objective of generative uncertainty models.
+
+This observation motivates the central hypothesis of this work: residual distributions should not only be realistic, but should also be learned in a manner that explicitly promotes calibrated uncertainty estimates.
+
+\subsection*{Long-Term Vision: Calibration-Aware Residual Learning (CARL)}
+
+This thesis is motivated by a broader research agenda termed Calibration-Aware Residual Learning (CARL). The central idea of CARL is that residuals, innovations, reconstruction errors, prediction errors, and other uncertainty-bearing quantities should be treated as first-class learning targets. Rather than evaluating calibration after training, calibration information should influence the learning process itself.
+
+Under this perspective, diffusion models represent only one possible residual-learning mechanism. Future CARL frameworks may incorporate Bayesian models, neural networks, conformal prediction systems, variational methods, reinforcement learning agents, computer vision architectures, foundation models, and other predictive systems. The unifying principle is that calibration feedback should be integrated directly into residual learning.
+
+The present work focuses on a specific instantiation of this broader framework using diffusion-based residual modeling for probabilistic forecasting.
 
 \subsection*{Contribution}
-Propose Calibration-Aware Diffusion Residual Learning.
 
-Incorporate calibration into diffusion training.
+This thesis proposes Calibration-Aware Diffusion Residual Learning (CADRL), a framework for learning residual distributions while explicitly optimizing for uncertainty calibration.
 
-Compare calibration-aware and standard diffusion learning.
+The proposed methodology extracts residuals from an underlying forecasting model, learns a generative residual distribution using diffusion models, and incorporates calibration-based feedback into the diffusion training objective. The resulting residual generator is designed not only to reproduce historical residual behavior but also to produce predictive distributions with improved calibration properties.
 
-Evaluate performance under controlled innovation misspecification.
+The contributions of this work are:
 
-Demonstrate effectiveness across both classical and deep forecasting systems.
+\begin{enumerate}
+\item Formulate residual learning as a calibration-aware generative modeling problem.
+\item Develop a calibration-augmented diffusion training objective that combines generative fidelity with uncertainty quality.
+\item Construct a modular forecasting framework separating predictive dynamics from uncertainty generation.
+\item Evaluate the proposed approach under controlled innovation misspecification using synthetic data generated from Gaussian, Student-\(t\), mixture, heteroskedastic, and diffusion-based innovation processes.
+\item Compare standard diffusion residual learning and calibration-aware diffusion residual learning using calibration metrics, coverage diagnostics, PIT analysis, CRPS, Energy Score, and interval scores.
+\item Demonstrate model-agnostic applicability through experiments on both classical forecasting systems (VARs) and modern neural forecasting systems (RNN-based models).
+\end{enumerate}
+
+More broadly, this work serves as a proof-of-concept for the larger Calibration-Aware Residual Learning paradigm and provides an initial step toward learning uncertainty models whose training objectives directly account for calibration.
 
 \section{Literature Review}
 
@@ -163,11 +178,331 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Lütkepohl (2005): New Introduction to Multiple Time Series Analysis}
 \href{https://link.springer.com/book/10.1007/978-3-540-27752-1}{Link}
 
+A Vector Autoregression (VAR) is the multivariate extension of a univariate autoregressive model and serves as one of the foundational models in multivariate time series forecasting. A VAR models each variable as a linear function of its own lagged values and the lagged values of all other variables in the system. Unlike structural models, VARs make minimal assumptions regarding causal relationships and instead focus on capturing dynamic dependence.
+
+Let \[y_t=\begin{bmatrix}y_{1,t}\\\vdots\\y_{k,t}\end{bmatrix}\in\mathbb R^k\] denote a \(k\)-dimensional time series. 
+A VAR(\(p\)) is defined as\[y_t=c+A_1y_{t-1}+A_2y_{t-2}+\cdots+A_py_{t-p}+u_t,\]
+where\[c\in\mathbb R^k,\qquad A_i\in\mathbb R^{k\times k},\]and\[u_t\sim(0,\Sigma_u).\]
+
+The innovation process \(u_t\) contains information that cannot be predicted using past observations and represents the primary source of forecast uncertainty.
+
+The innovation covariance matrix is
+
+\[\Sigma_u=E[u_tu_t^\top].\]
+
+Most classical VAR forecasting assumes
+
+\[u_t\sim N(0,\Sigma_u),\]
+
+although Gaussianity is not required for estimation consistency. The CADRL project directly challenges this assumption by replacing the Gaussian innovation model with learned residual distributions.
+
+The VAR can be rewritten using the lag operator
+
+\[L^j y_t=y_{t-j},\]
+
+as
+
+\[A(L)y_t=c+u_t,\]
+
+where
+
+\[A(L)=I_k-A_1L-\cdots-A_pL^p.\]
+
+This representation simplifies many theoretical derivations.
+
+A fundamental requirement is covariance stationarity. The VAR(\(p\)) is stationary if
+
+\[\det(A(z))\neq0\]
+
+for all complex numbers satisfying
+
+\[|z|\le1.\]
+
+Equivalently, all roots of
+
+\[\det(I_k-A_1z-\cdots-A_pz^p)=0\]
+
+must lie outside the unit circle.
+
+Under stationarity, the VAR admits an infinite-order moving-average representation,
+
+\[y_t=\mu+\sum_{j=0}^{\infty}\Phi_j u_{t-j},\]
+
+where
+
+\[\mu=(I-A_1-\cdots-A_p)^{-1}c.\]
+
+This representation is especially important because it explicitly shows how innovations propagate through time. Every future observation is a weighted sum of current and past shocks.
+
+For forecasting, define the information set
+
+\[\mathcal F_t=\{y_t,y_{t-1},\ldots\}.\]
+
+The optimal \(h\)-step forecast is
+
+\[\hat y_{t+h|t}=E[y_{t+h}|\mathcal F_t].\]
+
+Forecasts are obtained recursively,
+
+\[\hat y_{t+1|t}=c+A_1y_t+\cdots+A_py_{t-p+1},\]
+
+and
+
+\[\hat y_{t+h|t}=c+A_1\hat y_{t+h-1|t}+\cdots+A_p\hat y_{t+h-p|t}.\]
+
+Future innovations are replaced by their expectation,
+
+\[E[u_{t+h}|\mathcal F_t]=0.\]
+
+This recursion forms the deterministic forecast trajectory.
+
+Forecast uncertainty arises entirely from future innovations. Define the forecast error
+
+\[e_t(h)=y_{t+h}-\hat y_{t+h|t}.\]
+
+Using the MA representation,
+
+\[e_t(h)=\sum_{j=0}^{h-1}\Phi_ju_{t+h-j}.\]
+
+Consequently,
+
+\[\Var(e_t(h))=\sum_{j=0}^{h-1}\Phi_j\Sigma_u\Phi_j^\top.\]
+
+This equation is one of the most important results for the thesis because it explicitly links predictive uncertainty to the innovation distribution.
+
+Classical Gaussian prediction intervals are constructed using
+
+\[\hat y_{t+h|t}\pm z_{\alpha/2}\sqrt{\Var(e_t(h))}.\]
+
+If the innovation distribution is misspecified, these intervals may exhibit poor calibration. This observation provides one of the primary motivations for learning innovations directly.
+
+Parameter estimation is typically performed through Ordinary Least Squares. Define
+
+\[Y=\begin{bmatrix}y_{p+1}\\\vdots\\y_T\end{bmatrix},\]
+
+and
+
+\[X=\begin{bmatrix}1 & y_p^\top & \cdots & y_1^\top\\\vdots & \vdots & & \vdots\\1 & y_{T-1}^\top & \cdots & y_{T-p}^\top\end{bmatrix}.\]
+
+The VAR becomes
+
+\[Y=XB+U,\]
+
+with coefficient matrix
+
+\[B=\begin{bmatrix}c & A_1 & \cdots & A_p\end{bmatrix}^\top.\]
+
+OLS yields
+
+\[\hat B=(X^\top X)^{-1}X^\top Y.\]
+
+A useful property is that OLS estimation of each equation separately is equivalent to generalized least squares because all regressors are identical across equations.
+
+Residuals are computed as
+
+\[\hat u_t=y_t-\hat c-\hat A_1y_{t-1}-\cdots-\hat A_py_{t-p}.\]
+
+For CADRL, these residuals become empirical innovation samples,
+
+\[r_t=\hat u_t.\]
+
+The entire diffusion-learning framework is built upon these residuals.
+
+A critical distinction exists between parameter uncertainty and innovation uncertainty. Classical forecasting often assumes
+
+\[u_t\sim N(0,\Sigma_u),\]
+
+and treats parameter estimates as fixed. In practice, uncertainty arises from both sources:
+
+\[p(y_{t+h}|D)=\int p(y_{t+h}|\theta,u)p(\theta|D)\,d\theta.\]
+
+CADRL focuses primarily on improving innovation uncertainty rather than parameter uncertainty.
+
+Several innovation assumptions are especially relevant for the project.
+
+Gaussian innovations:
+
+\[u_t\sim N(0,\Sigma_u).\]
+
+Student-\(t\) innovations:
+
+\[u_t\sim t_\nu(0,\Sigma_u),\]
+
+which introduce heavy tails.
+
+Mixture innovations:
+
+\[u_t\sim\sum_{k=1}^{K}\pi_kN(\mu_k,\Sigma_k),\]
+
+which introduce multimodality.
+
+Heteroskedastic innovations:
+
+\[u_t=H_t^{1/2}\epsilon_t,\qquad\epsilon_t\sim N(0,I),\]
+
+where volatility varies through time.
+
+Diffusion innovations:
+
+\[u_t\sim p_\theta(u),\]
+
+where
+
+\[p_\theta\]
+
+is learned from residual data using a diffusion model.
+
+These alternative innovation structures form the experimental backbone of the thesis.
+
+Impulse Response Functions (IRFs) describe the effect of a unit innovation on future values. Using the MA representation,
+
+\[y_t=\mu+\sum_{j=0}^{\infty}\Phi_j u_{t-j},\]
+
+the impulse response at horizon \(h\) is
+
+\[\Phi_h.\]
+
+Although IRFs are traditionally used for economic interpretation, they also reveal how innovation misspecification propagates through forecasts.
+
+Forecast evaluation should focus on probabilistic metrics rather than point accuracy alone. Relevant metrics include Coverage, PIT, ECE, CRPS, Energy and Interval Score.
+
+These metrics assess both calibration and sharpness of predictive distributions.
+
+For the CADRL project, the most important takeaway is that the entire forecasting uncertainty structure of a VAR is driven by the innovation process. Once coefficient estimates are fixed, all predictive uncertainty originates from future shocks. Classical VARs impose simple parametric assumptions on these shocks, typically Gaussianity. CADRL instead treats innovations as a learnable object. Residuals
+
+\[r_t=y_t-\hat y_t\]
+
+are extracted from the fitted VAR, a diffusion model learns
+
+\[p(r),\]
+
+and future innovations are sampled from the learned distribution. Calibration-aware training then seeks innovation distributions that produce reliable predictive intervals and well-calibrated uncertainty estimates. Thus, the thesis can be viewed as replacing the classical innovation model
+
+\[u_t\sim N(0,\Sigma_u)\]
+
+with a learned and calibration-aware generative innovation model.
+
 \subsubsection{Karlsson (2013): Forecasting with Bayesian Vector Autoregressions}
 \href{https://www.econstor.eu/bitstream/10419/244486/1/wp2012-12.pdf}{Link}
 
+Bayesian forecasting treats all unknown quantities as random variables and bases prediction on the posterior predictive distribution rather than on point estimates. Let \(y\) denote the observed data, \(\theta\) the model parameters, and \(\tilde y\) future observations. Bayesian forecasting is based on
+
+\[p(\tilde y \mid y)=\int p(\tilde y \mid \theta,y)p(\theta\mid y)d\theta,\]
+
+which averages future predictions over parameter uncertainty. This contrasts with classical forecasting, where forecasts are typically conditioned on a single parameter estimate. A key theme throughout the paper is that accounting for parameter uncertainty often improves forecast performance, particularly in small samples.
+
+The chapter argues that the success of Bayesian VARs stems from their ability to reduce overfitting through prior shrinkage. A standard VAR with \(m\) variables and \(p\) lags can be written as
+
+\[y_t=c+A_1y_{t-1}+\cdots+A_py_{t-p}+u_t,\]
+
+where
+
+\[u_t\sim N(0,\Sigma).=\]
+
+As the number of variables and lags increases, the number of coefficients grows rapidly, leading to substantial estimation uncertainty. Bayesian methods address this problem by shrinking parameters toward economically plausible values.
+
+The most influential prior in the BVAR literature is the Minnesota prior introduced by Litterman. The prior centers each variable around a random walk by shrinking own first-lag coefficients toward one and shrinking other coefficients toward zero. This reflects the empirical observation that many macroeconomic variables exhibit strong persistence. The practical consequence is reduced parameter variance and improved out-of-sample forecasting.
+
+A central Bayesian insight is that forecasting uncertainty consists of two components: parameter uncertainty and innovation uncertainty. Posterior predictive forecasts integrate over both. For CADRL, this decomposition is particularly important because the project focuses on replacing simplistic innovation assumptions with learned residual distributions. In the Bayesian predictive framework,
+
+\[p(\tilde y\mid y)=\int p(\tilde y\mid\theta,\Sigma)p(\theta,\Sigma\mid y)d\theta d\Sigma,\]
+
+where uncertainty enters through both \(\theta\) and the innovation covariance \(\Sigma\). CADRL can be viewed as replacing the Gaussian innovation model with a learned diffusion-based residual law.
+
+The paper emphasizes the importance of simulation-based inference. Most modern Bayesian forecasting relies on Markov chain Monte Carlo (MCMC) methods to approximate posterior and predictive distributions. Given posterior draws
+
+\[\{\theta^{(s)}\}_{s=1}^{S},\]
+
+forecasts are generated by recursively simulating future paths
+
+\[\tilde y^{(s)}\sim p(\tilde y\mid\theta^{(s)},y).\]
+
+The collection of simulated paths approximates the predictive distribution. This simulation-based perspective is highly relevant to diffusion residual learning, where uncertainty is also represented through generated trajectories rather than analytical formulas.
+
+The chapter provides a detailed discussion of the Normal-Wishart prior, which serves as the conjugate prior for VAR models. Let $B$ denote the stacked coefficient matrix. Under the conjugate specification,
+
+\[B\mid\Sigma\sim MN(B_0,\Sigma,\Omega_0),\]
+
+and
+
+\[\Sigma\sim IW(S_0,\nu_0).\]
+
+Conjugacy yields closed-form posterior updates and facilitates efficient forecasting. Although CADRL does not directly use BVARs, these priors illustrate how traditional uncertainty modeling is typically imposed through parametric assumptions on residual behavior.
+
+An important conceptual distinction emerges between parameter shrinkage and innovation modeling. Most BVAR research improves forecasts by imposing structure on coefficients through priors. CADRL instead seeks to improve uncertainty quantification by imposing structure on the innovation distribution itself. In this sense, CADRL addresses a different source of forecast error than classical BVAR methods.
+
+The chapter also discusses extensions involving stochastic volatility and time-varying parameters. These models recognize that
+
+\[u_t\sim N(0,\Sigma_t),\]
+
+where the innovation variance changes over time. This observation provides direct motivation for the heteroskedastic DGPs proposed in CADRL. If residual uncertainty evolves over time, a fixed Gaussian innovation model becomes inadequate, suggesting a role for more flexible generative residual models.
+
+Model comparison in Bayesian forecasting is frequently based on predictive performance rather than parameter estimation accuracy. The chapter discusses predictive likelihoods, marginal likelihoods, and forecast evaluation methods. This aligns closely with the CADRL philosophy that uncertainty models should ultimately be judged by forecast quality and calibration rather than likelihood alone.
+
+One recurring message throughout the chapter is that simple models often forecast surprisingly well. Increasing model complexity only helps when it captures meaningful structure in the data. This observation is relevant for CADRL because it motivates comparisons between diffusion residual learning and simpler alternatives such as Gaussian, Student-\(t\), and bootstrap residual models. Any improvement from calibration-aware diffusion learning must be demonstrated through predictive performance rather than model flexibility alone.
+
+Relevance to CADRL. This chapter provides the forecasting foundation for the project. The most important concepts are the posterior predictive distribution, parameter uncertainty versus innovation uncertainty, simulation-based forecasting, shrinkage as a mechanism for reducing uncertainty, and the role of predictive evaluation. While BVARs focus on improving forecasts through better parameter priors, CADRL focuses on improving forecasts through better residual distributions. The chapter therefore provides both the forecasting framework and a useful conceptual contrast against which calibration-aware diffusion residual learning can be motivated.
+
 \subsubsection{Salinas et al. (2020): DeepAR: Probabilistic Forecasting with Autoregressive Recurrent Networks}
 \href{https://arxiv.org/abs/1704.04110}{Link}
+
+DeepAR proposes a global probabilistic forecasting framework that learns from many related time series simultaneously rather than fitting separate models to each series. The key insight is that modern forecasting problems often involve thousands or millions of related sequences, making it advantageous to share statistical strength across series. Instead of estimating model parameters independently for each time series, DeepAR learns a single recurrent neural network whose parameters are shared across all series.
+
+The forecasting objective is to estimate the predictive distribution
+
+\[P(z_{i,t_0:T}\mid z_{i,1:t_0-1},x_{i,1:T}),\]
+
+where \(z_{i,t}\) denotes the target series and \(x_{i,t}\) denotes known covariates. Unlike classical forecasting methods that often produce point forecasts, DeepAR directly models uncertainty through a predictive likelihood.
+
+The model is autoregressive. At each time step, the recurrent network receives the previous observation, covariates, and hidden state,
+
+\[h_{i,t}=h(h_{i,t-1},z_{i,t-1},x_{i,t};\Theta),\]
+
+where \(h_{i,t}\) is the hidden state and \(\Theta\) denotes network parameters. The hidden state is then used to parameterize a predictive distribution
+
+\[\theta_{i,t}=\theta(h_{i,t};\Theta),\]
+
+yielding
+
+\[z_{i,t}\sim\ell(\cdot\mid\theta_{i,t}).\]
+
+The likelihood \(\ell\) can be chosen to match the data. For count data, the paper uses a negative binomial likelihood rather than a Gaussian distribution. This is one of the most important differences from traditional forecasting models. DeepAR explicitly acknowledges that many real-world forecasting problems exhibit skewness, intermittency, burstiness, and heavy-tailed behavior that violate Gaussian assumptions.
+
+Training proceeds through maximum likelihood estimation. Given observations \(z_{i,t}\), the objective is
+
+\[\mathcal L=-\sum_{i,t}\log\ell(z_{i,t}\mid\theta_{i,t}),\]
+
+which corresponds to maximizing the joint likelihood of all training sequences.
+
+Prediction is performed recursively. During training, the true previous observation is available and used as input. During forecasting, the previous prediction must be used instead. Given a sampled forecast
+
+\[\tilde z_{i,t}\sim\ell(\cdot\mid\theta_{i,t}),\]
+
+the sample is fed back into the network to generate the next prediction. Repeating this process yields an entire forecast trajectory. Multiple trajectories are generated through Monte Carlo simulation, producing an empirical predictive distribution rather than a single forecast path.
+
+One of the paper's major contributions is demonstrating that deep learning models can naturally produce probabilistic forecasts. Forecast uncertainty is represented by repeatedly sampling future trajectories from the learned predictive distribution. This sampling-based view of uncertainty is highly relevant to CADRL because diffusion residual learning will also rely on Monte Carlo generation of future innovations.
+
+A significant practical challenge discussed in the paper is scale variation across time series. In large collections of related sequences, magnitudes can differ by several orders of magnitude. DeepAR introduces scale normalization strategies that allow a single global model to learn effectively across heterogeneous series. This observation is important because residual distributions often inherit scale heterogeneity. If CADRL is extended to large forecasting datasets, residual normalization may become necessary before diffusion training.
+
+The paper emphasizes that probabilistic forecasting should be evaluated using proper scoring rules rather than point forecast metrics alone. This perspective aligns directly with the CADRL philosophy. Since uncertainty quantification is the primary goal, evaluation should focus on predictive distributions rather than mean predictions. This motivates the use of CRPS, energy score, calibration measures, and coverage metrics throughout the CADRL project.
+
+From a residual-learning perspective, DeepAR implicitly assumes that uncertainty is fully captured by the chosen likelihood family. For example, if a Gaussian likelihood is used, the forecast distribution is entirely determined by Gaussian assumptions. CADRL differs fundamentally by separating forecasting from uncertainty learning. Instead of assuming
+
+\[z_t=f_\theta(\mathcal F_t)+\epsilon_t,\qquad\epsilon_t\sim\ell,\]
+
+with a fixed likelihood \(\ell\), CADRL proposes learning the residual distribution directly. After fitting the forecasting model,
+
+\[r_t=z_t-\hat z_t,\]
+
+residuals become empirical innovation proxies. A diffusion model then learns
+
+\[p(r),\]
+
+allowing uncertainty to be modeled independently of the forecasting architecture.
+
+Another important observation is that DeepAR already represents a probabilistic forecasting system with Monte Carlo sampling. This makes it an ideal benchmark for CADRL. The forecasting model itself remains unchanged, while the residual uncertainty model can be replaced. This allows a clean experimental comparison between classical uncertainty assumptions and learned residual distributions.
+
+For the CADRL project, DeepAR serves two purposes. First, it provides a modern nonlinear forecasting benchmark alongside VAR. Second, it demonstrates how predictive uncertainty can be generated through simulation rather than closed-form distributions. The CADRL framework extends this idea by replacing parametric likelihood assumptions with diffusion-based residual distributions and by introducing calibration-aware training objectives. Conceptually, DeepAR learns a predictive distribution directly, whereas CADRL decomposes forecasting into a prediction component and a separate uncertainty-learning component. This decomposition makes it possible to explicitly optimize uncertainty quality through calibration feedback.
 
 %------------------------------------------------
 
@@ -176,14 +511,417 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Ho et al. (2020): Denoising Diffusion Probabilistic Models}
 \href{https://arxiv.org/abs/2006.11239}{Link}
 
+Diffusion probabilistic models (DDPMs) are latent variable generative models that learn to reverse a gradual noise corruption process. The key idea is to define a fixed forward diffusion process that progressively destroys structure in the data and then learn a reverse Markov chain capable of reconstructing samples from pure noise. Given data \(x_0 \sim q(x_0)\), the forward process is
+
+\[q(x_{1:T}|x_0)=\prod_{t=1}^{T} q(x_t|x_{t-1}),\]
+
+with Gaussian transitions
+
+\[q(x_t|x_{t-1})=\mathcal N\left(\sqrt{1-\beta_t}x_{t-1}, \beta_t I\right),\]
+
+where \(\{\beta_t\}_{t=1}^{T}\) is a predefined variance schedule. Defining \(\alpha_t=1-\beta_t\) and \(\bar\alpha_t=\prod_{s=1}^{t}\alpha_s\), repeated application yields the closed-form marginal
+
+\[q(x_t|x_0)=\mathcal N\left(\sqrt{\bar\alpha_t}x_0,(1-\bar\alpha_t)I\right),\]
+
+which can be reparameterized as
+
+\[x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon,\qquad\epsilon\sim\mathcal N(0,I).\]
+
+This closed-form expression is one of the most important computational features of DDPMs because it allows arbitrary noise levels to be sampled directly during training.
+
+The reverse process is parameterized as
+
+\[p_\theta(x_{0:T})=p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}|x_t),\]
+
+with
+
+\[p_\theta(x_{t-1}|x_t)=\mathcal N\left(\mu_\theta(x_t,t),\Sigma_\theta(x_t,t)\right).\]
+
+Training proceeds through variational inference. The evidence lower bound (ELBO) is
+
+\[\mathcal L=\mathbb E_q\left[-\log p_\theta(x_{0:T})+\log q(x_{1:T}|x_0)\right].\]
+
+A major contribution of Ho et al. is showing that under an appropriate parameterization, learning the reverse process becomes equivalent to predicting the injected Gaussian noise. Rather than directly learning \(\mu_\theta\), define a neural network \(\epsilon_\theta(x_t,t)\) and write
+
+\[\mu_\theta(x_t,t)=\frac{1}{\sqrt{\alpha_t}}\left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta(x_t,t)\right).\]
+
+Substituting this parameterization into the ELBO yields a simplified objective
+
+\[\mathcal L_{\text{simple}}=\mathbb E_{x_0,\epsilon,t}\left[\|\epsilon-\epsilon_\theta(x_t,t)\|^2\right].\]
+
+This transforms diffusion training into a denoising problem: given a noisy observation \(x_t\), predict the exact Gaussian perturbation that generated it. This objective is substantially easier to optimize than the original ELBO and became the standard training procedure for diffusion models.
+
+The paper establishes an important theoretical connection between diffusion models and denoising score matching. The learned network implicitly estimates the score function
+
+\[\nabla_x \log p_t(x),\]
+
+and sampling resembles annealed Langevin dynamics. This observation later motivated the score-based diffusion framework of Song et al. (2021), which reformulates diffusion through stochastic differential equations.
+
+The reverse sampling procedure begins with
+
+\[x_T\sim \mathcal N(0,I),\]
+
+and recursively applies
+
+\[x_{t-1}=\frac{1}{\sqrt{\alpha_t}}\left(x_t-\frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta(x_t,t)\right)+\sigma_t z,\]
+
+where \(z\sim\mathcal N(0,I)\). Sampling therefore consists of iteratively denoising Gaussian noise until a data sample is recovered.
+
+For the CADRL project, the most important contribution of DDPM is not image generation but the learning paradigm itself. The diffusion model learns an entire distribution through a denoising objective rather than directly maximizing likelihood. In the proposed calibration-aware framework, residuals
+
+\[r_t=y_t-\hat y_t\]
+
+replace images as the object being modeled. Standard diffusion residual learning would optimize
+
+\[\mathcal L_{\text{diffusion}}=\mathbb E\left[\|\epsilon-\epsilon_\theta(r_t,t)\|^2\right].\]
+
+The proposed CADRL extension modifies this objective to
+
+\[\mathcal L_{\text{CADRL}}=\mathcal L_{\text{diffusion}}+\lambda\mathcal L_{\text{calibration}},\]
+
+where calibration feedback influences residual learning directly. Consequently, DDPM provides the foundational generative mechanism upon which calibration-aware residual learning can be built.
+
+Key takeaways for the project are that diffusion models (i) provide a flexible nonparametric density model, (ii) can learn highly non-Gaussian distributions, (iii) naturally generate Monte Carlo samples for uncertainty quantification, and (iv) admit differentiable training objectives that can potentially be augmented with calibration-based penalties.
+
 \subsubsection{Song et al. (2021): Score-Based Generative Modeling through Stochastic Differential Equations}
 \href{https://arxiv.org/abs/2011.13456}{Link}
+
+The paper unifies denoising diffusion probabilistic models (DDPMs) and score-based generative models under a continuous-time stochastic differential equation (SDE) framework. The central insight is that both approaches learn the score function
+
+\[\nabla_x \log p_t(x),\]
+
+the gradient of the log-density of the perturbed data distribution at noise level \(t\). Once the score is known, generation becomes equivalent to solving a reverse-time stochastic process that transforms noise into data.
+
+The paper begins with score matching. Given a density \(p(x)\), the score is defined as
+
+\[s(x)=\nabla_x \log p(x).\]
+
+Rather than learning the density directly, score-based methods learn its gradient field. This avoids explicit normalization constants and allows generation through stochastic sampling procedures. The key observation is that the score uniquely determines the reverse dynamics of a diffusion process.
+
+Previous score-based models such as Noise Conditional Score Networks (NCSNs) learn scores across multiple noise levels. Let
+
+\[\tilde x = x + \sigma z,\qquad z\sim N(0,I),\]
+
+and define the perturbed density \(p_\sigma(\tilde x)\). The score network
+
+\[s_\theta(x,\sigma)\]
+
+is trained using denoising score matching,
+
+\[\mathcal L=\sum_i\sigma_i^2\mathbb E\left[\|s_\theta(\tilde x,\sigma_i)-\nabla_{\tilde x}\log p_\sigma(\tilde x|x)\|^2\right].\]
+
+The paper shows that DDPMs can be interpreted as learning exactly the same object. In particular, the DDPM noise predictor is equivalent to a score estimator after a simple rescaling. This establishes that diffusion models and score-based models are fundamentally the same class of generative model.
+
+The main contribution is the introduction of a continuous-time forward diffusion process governed by the Itô SDE
+
+\[dx=f(x,t)dt+g(t)dW,\]
+
+where \(W\) is Brownian motion, \(f\) is the drift coefficient, and \(g\) controls noise injection. Starting from data
+
+\[x(0)\sim p_0,\]
+
+the forward process gradually transforms the data distribution into a tractable prior
+
+\[x(T)\sim p_T.\]
+
+Unlike DDPMs, which use a finite sequence of noise levels, the SDE framework uses a continuum of noise scales.
+
+A fundamental theorem from stochastic processes yields the reverse-time SDE
+
+\[dx=\left[f(x,t)-g(t)^2\nabla_x \log p_t(x)\right]dt+g(t)d\bar W,\]
+
+where \(d\bar W\) denotes reverse-time Brownian motion. This equation is the theoretical foundation of modern diffusion models. Generation becomes possible once the score
+
+\[\nabla_x \log p_t(x)\]
+
+has been estimated. A neural network
+
+\[s_\theta(x,t)\]
+
+is trained to approximate this score, and generation is performed by numerically integrating the reverse SDE.
+
+The paper introduces several forward SDE choices. The Variance Exploding (VE) SDE corresponds closely to NCSN,
+
+\[dx=\sqrt{\frac{d\sigma^2(t)}{dt}}\, dW,\]
+
+while the Variance Preserving (VP) SDE corresponds to DDPM,
+
+\[dx=-\frac12 \beta(t)xdt+\sqrt{\beta(t)}\,dW.\]
+
+These formulations reveal that DDPM and NCSN are simply different discretizations of related continuous-time diffusion processes.
+
+A major practical contribution is the Predictor-Corrector (PC) sampler. Generation alternates between:
+
+\begin{enumerate}
+\item A predictor step using a numerical SDE solver.
+\item A corrector step using Langevin dynamics.
+\end{enumerate}
+
+The Langevin update is
+
+\[x_{k+1}=x_k+\epsilon s_\theta(x_k,t)+\sqrt{2\epsilon}z_k,\]
+
+where \(z_k\sim N(0,I)\). The corrector improves sample quality by moving samples toward high-density regions identified by the score function.
+
+Another important contribution is the probability flow ODE,
+
+\[dx=\left[f(x,t)-\frac12 g(t)^2\nabla_x \log p_t(x)\right]dt.\]
+
+This deterministic differential equation produces exactly the same marginal distributions as the stochastic reverse SDE. Unlike stochastic sampling, the ODE allows exact likelihood computation and latent-space manipulation. This connection later became the basis for flow-matching and continuous normalizing flow methods.
+
+From the perspective of CADRL, the most important idea is that diffusion learning can be viewed as learning a score field rather than a density. Suppose residuals are defined as
+
+\[r_t=y_t-\hat y_t.\]
+
+Instead of learning
+
+\[p(r),\]
+
+one can learn the score
+
+\[\nabla_r \log p(r).\]
+
+This is particularly attractive because score learning scales well to high-dimensional residual structures and does not require explicit density estimation.
+
+The SDE formulation is especially relevant to the proposed calibration-aware extension. Standard score-based learning optimizes
+
+\[\mathcal L_{\text{score}}=\mathbb E\left[\|s_\theta(x,t)-\nabla_x \log p_t(x)\|^2\right].\]
+
+For CADRL, one could instead consider
+
+\[\mathcal L_{\text{CADRL}}=\mathcal L_{\text{score}}+\lambda\mathcal L_{\text{calibration}},\]
+
+where calibration metrics influence the learned score field. This interpretation is arguably more natural than modifying DDPM objectives because score matching already defines a continuous optimization framework.
+
+The paper is also important because it provides the theoretical connection between diffusion models and stochastic differential equations. Since the advisor's interests include stochastic processes and uncertainty quantification, this paper offers the mathematical foundation needed to justify diffusion residual learning beyond simple generative modeling. Residual diffusion can be interpreted as learning a stochastic process whose reverse dynamics generate calibrated innovation samples. Consequently, Song et al. provides the primary theoretical foundation for any future calibration-aware diffusion residual framework.
+
+Relevance to CADRL. This paper is arguably the most important diffusion reference for the project. It establishes that diffusion models are fundamentally score-learning procedures, provides the SDE interpretation of diffusion, introduces reverse-time generation through learned score functions, and supplies a continuous optimization framework that naturally accommodates calibration-aware modifications. If Ho et al. (2020) provides the practical diffusion algorithm, Song et al. (2021) provides the theoretical machinery upon which CADRL can be built.
 
 \subsubsection{Rasul et al. (2021): Autoregressive Denoising Diffusion Models for Multivariate Probabilistic Time Series Forecasting (TimeGrad)}
 \href{https://arxiv.org/abs/2101.12072}{Link}
 
+TimeGrad extends denoising diffusion probabilistic models to multivariate probabilistic time series forecasting by combining autoregressive sequence modeling with diffusion-based density estimation. The key idea is to replace the simple parametric emission distributions commonly used in forecasting models with a flexible diffusion model capable of learning complex high-dimensional predictive distributions. Rather than assuming Gaussian or low-rank covariance structures, TimeGrad learns the full conditional distribution at each forecast horizon through score-based generative modeling.
+
+The paper begins by observing that most probabilistic forecasting methods rely on restrictive distributional assumptions. Given a multivariate series
+
+\[x_t\in\mathbb R^D,\]
+
+the forecasting objective is to learn
+
+\[q(x_{t_0:T}|x_{1:t_0-1},c_{1:T}),\]
+
+where \(c_t\) denotes known covariates. Using the autoregressive factorization,
+
+\[q(x_{t_0:T}|x_{1:t_0-1},c_{1:T})=\prod_{t=t_0}^{T}q(x_t|x_{1:t-1},c_{1:T}),\]
+
+forecasting reduces to learning a sequence of conditional distributions.
+
+A major limitation of existing approaches is the emission distribution. Models such as DeepAR parameterize
+
+\[x_t\sim p(x_t|\theta_t),\]
+
+where \(\theta_t\) defines a Gaussian, Student-\(t\), or negative binomial distribution. While computationally convenient, these distributions may poorly represent complex multivariate dependencies. TimeGrad replaces this assumption with a diffusion model.
+
+Temporal structure is captured through an autoregressive recurrent network. Given hidden state \(h_{t-1}\),
+
+\[h_t=RNN_\theta\big(\text{concat}(x_t,c_t),h_{t-1}\big),\]
+
+where the RNN may be implemented as an LSTM or GRU. The hidden state summarizes all information available up to time \(t\).
+
+Instead of using \(h_t\) to parameterize a simple likelihood, TimeGrad conditions a diffusion model on the hidden state. At each forecast step, a diffusion process learns the conditional distribution
+
+\[p(x_t|h_{t-1}).\]
+
+The resulting model can represent arbitrary multivariate densities while retaining the autoregressive forecasting structure.
+
+The diffusion component follows the DDPM framework. For each time step, a forward diffusion process is defined by
+
+\[q(x_n|x_{n-1})=N\left(\sqrt{1-\beta_n}x_{n-1},\beta_n I\right),\]
+
+and admits the closed-form representation
+
+\[q(x_n|x_0)=N\left(\sqrt{\bar\alpha_n}x_0,(1-\bar\alpha_n)I\right).\]
+
+Training proceeds through noise prediction. Given a noisy sample
+
+\[x_n=\sqrt{\bar\alpha_n}x_0+\sqrt{1-\bar\alpha_n}\epsilon,\]
+
+with
+
+\[\epsilon\sim N(0,I),\]
+
+the network learns
+
+\[\epsilon_\theta(x_n,h_{t-1},n).\]
+
+The objective becomes
+
+\[\mathcal L=\mathbb E\left[\|\epsilon-\epsilon_\theta(x_n,h_{t-1},n)\|^2\right].\]
+
+Relative to standard DDPMs, the important difference is the conditioning on the recurrent hidden state \(h_{t-1}\). This allows the diffusion model to learn a time-varying predictive distribution that changes as new observations arrive.
+
+Forecast generation proceeds autoregressively. At each future time step, the RNN produces a hidden state summarizing past information. A diffusion model then generates a sample from
+
+\[p(x_t|h_{t-1}).\]
+
+The generated value is fed back into the recurrent network to update the hidden state and generate the next forecast. Repeating this process yields complete forecast trajectories. Multiple trajectories provide a Monte Carlo approximation of the predictive distribution.
+
+One of the most important conceptual contributions of TimeGrad is the separation between temporal modeling and distribution modeling. The RNN captures dynamics,
+
+\[h_t=f(h_{t-1},x_t,c_t),\]
+
+while the diffusion model captures uncertainty,
+
+\[p(x_t|h_{t-1}).\]
+
+This decomposition is highly relevant to CADRL because it suggests that uncertainty learning can be treated independently from forecasting dynamics.
+
+For the CADRL project, TimeGrad is perhaps the closest existing work. However, the scientific objective differs substantially. TimeGrad uses diffusion models to directly generate future observations. CADRL instead proposes learning the residual process
+
+\[r_t=y_t-\hat y_t,\]
+
+after a forecasting model has already been fitted. Rather than learning
+
+\[p(y_t|h_{t-1}),\]
+
+CADRL learns
+
+\[p(r_t),\]
+
+or potentially
+
+\[p(r_t|h_{t-1}),\]
+
+and reconstructs uncertainty through
+
+\[\tilde y_t=\hat y_t+\tilde r_t.\]
+
+This distinction is important because CADRL separates prediction from uncertainty modeling, whereas TimeGrad combines them into a single end-to-end model.
+
+Another key difference is the learning objective. TimeGrad optimizes only the diffusion loss
+
+\[\mathcal L_{\text{diffusion}}=\mathbb E\left[\|\epsilon-\epsilon_\theta\|^2\right].\]
+
+The proposed CADRL framework augments this objective with calibration feedback,
+
+\[\mathcal L_{\text{CADRL}}=\mathcal L_{\text{diffusion}}+\lambda\mathcal L_{\text{calibration}}.\]
+
+Consequently, CADRL seeks not merely to learn realistic residual distributions but to learn residual distributions that produce calibrated uncertainty estimates.
+
+The paper also highlights a practical advantage of diffusion models in forecasting. Traditional multivariate distributions often require estimating covariance matrices whose complexity scales as
+
+\[O(D^2)\]
+
+or
+
+\[O(D^3).\]
+
+Diffusion models avoid explicit covariance parameterization and can represent high-dimensional dependencies implicitly through neural networks. This observation motivates their use for modeling multivariate innovation distributions in VAR systems and multivariate residual structures in CADRL.
+
+Relevance to CADRL. TimeGrad is arguably the closest forecasting-related paper to the proposed research. It demonstrates that diffusion models can successfully learn complex predictive distributions for multivariate time series and provides a blueprint for integrating diffusion models with sequential forecasting architectures. The primary distinction is that TimeGrad learns future observations directly, whereas CADRL learns residual distributions and introduces calibration-aware training objectives. As a result, TimeGrad serves both as a methodological foundation and as a natural benchmark against which calibration-aware diffusion residual learning can be compared.
+
 \subsubsection{Yan et al. (2021): ScoreGrad: Multivariate Probabilistic Time Series Forecasting with Continuous Energy-Based Generative Models}
 \href{https://arxiv.org/abs/2106.10121}{Link}
+
+ScoreGrad extends score-based diffusion models to multivariate probabilistic forecasting and can be viewed as a continuous-time counterpart to TimeGrad. The paper combines recurrent sequence modeling with score-based generative modeling through stochastic differential equations (SDEs). Rather than directly parameterizing a predictive density, ScoreGrad learns the score function of the conditional future distribution and uses reverse-time diffusion dynamics to generate forecast samples.
+
+The forecasting objective is to learn
+
+\[p(x_t|x_{1:t-1},c_{1:t}),\]
+
+for multivariate time series \(x_t\in\mathbb R^D\). Similar to DeepAR and TimeGrad, temporal dependence is summarized through a recurrent hidden state
+
+\[h_t=RNN_\theta(x_t,h_{t-1},c_t),\]
+
+which serves as a compact representation of historical information. Unlike traditional forecasting models, however, ScoreGrad does not assume a parametric likelihood such as Gaussian or Student-\(t\).
+
+The core idea is to model the predictive distribution through its score function
+
+\[s(x,t)=\nabla_x \log p_t(x),\]
+
+where \(p_t(x)\) denotes the perturbed data distribution at diffusion time \(t\). By learning the score rather than the density itself, the model avoids explicit covariance parameterization and can represent highly complex multivariate uncertainty structures.
+
+The forward diffusion process is defined through an SDE
+
+\[dx=f(x,t)dt+g(t)dW,\]
+
+which gradually transforms the data distribution into a tractable Gaussian prior. As \(t\) increases, information is progressively destroyed until
+
+\[p_T(x)\approx N(0,I).\]
+
+Generation is accomplished through the reverse-time SDE
+
+\[dx=\left[f(x,t)-g(t)^2\nabla_x\log p_t(x)\right]dt+g(t)d\bar W,\]
+
+where the score function governs the reverse dynamics. Once the score has been learned, forecast samples can be generated by numerically integrating the reverse process.
+
+A key innovation of ScoreGrad is conditioning the score network on the forecasting context. Instead of estimating
+
+\[s(x,t),\]
+
+the model learns
+
+\[s_\theta(x,t,h),\]
+
+where \(h\) is the recurrent hidden state summarizing the past. The score therefore becomes conditional on forecasting information, allowing the generated distribution to adapt dynamically as the observed history changes.
+
+Training uses denoising score matching. Let
+
+\[x_t=x_0+\sigma_t z,\qquad z\sim N(0,I),\]
+
+represent a noisy version of the target. The score network is trained to approximate
+
+\[\nabla_{x_t}\log p(x_t|x_0),\]
+
+through the objective
+
+\[\mathcal L=\mathbb E\left[\lambda(t)\left\|s_\theta(x_t,t,h)-\nabla_{x_t}\log p(x_t|x_0)\right\|^2\right],\]
+
+where \(\lambda(t)\) is a weighting function. This objective is equivalent to learning the gradient field of the conditional data distribution across all noise levels.
+
+One of the most important conceptual contributions of the paper is the interpretation of probabilistic forecasting as conditional generative modeling. Rather than forecasting means and variances, the model directly learns the geometry of the predictive distribution. This perspective aligns naturally with uncertainty quantification because the entire predictive distribution becomes the primary object of interest.
+
+The paper demonstrates that score-based models outperform several classical probabilistic forecasting approaches, particularly in settings where the predictive distribution exhibits complex dependencies. Because score networks do not require explicit likelihood parameterization, they can capture nonlinear correlations, multimodality, and heavy-tailed behavior that are difficult to model using conventional distributions.
+
+From the perspective of CADRL, ScoreGrad is particularly important because it shifts attention away from density estimation and toward score learning. If residuals are defined as
+
+\[r_t=y_t-\hat y_t,\]
+
+then CADRL can be interpreted as learning
+
+\[\nabla_r\log p(r)\]
+
+rather than directly estimating \(p(r)\). This score-based perspective is attractive because it naturally scales to high-dimensional residual structures and provides a continuous optimization framework.
+
+Relative to TimeGrad, ScoreGrad provides a more theoretically elegant formulation through SDEs and score matching. TimeGrad relies primarily on the DDPM framework, whereas ScoreGrad is built directly upon the continuous-time theory developed by Song et al. (2021). Consequently, ScoreGrad establishes a stronger connection between forecasting and stochastic process theory.
+
+The distinction between ScoreGrad and CADRL lies in the learning objective. ScoreGrad optimizes only the score-matching loss,
+
+\[\mathcal L_{\text{score}},\]
+
+with the goal of learning an accurate predictive distribution. CADRL instead proposes
+
+\[\mathcal L_{\text{CADRL}}=\mathcal L_{\text{score}}+\lambda\mathcal L_{\text{calibration}},\]
+
+where calibration quality influences the learned score field. Rather than merely approximating the true residual distribution, CADRL seeks residual distributions that produce well-calibrated uncertainty estimates.
+
+Another important conceptual distinction is the forecasting target. ScoreGrad directly models future observations,
+
+\[p(y_t|h_{t-1}),\]
+
+whereas CADRL decomposes forecasting into
+
+\[\hat y_t=f(\mathcal F_t),\]
+
+and
+
+\[r_t=y_t-\hat y_t.\]
+
+The score model is then applied to residuals rather than observations. This separation allows uncertainty modeling to be studied independently of forecasting accuracy and makes the framework applicable across multiple predictive architectures.
+
+For the proposed thesis, ScoreGrad serves as both a theoretical and methodological reference. It demonstrates how score-based diffusion models can be integrated into forecasting systems and provides the mathematical framework needed to formulate calibration-aware score learning. Because CADRL modifies the learning objective rather than the diffusion architecture itself, ScoreGrad offers a natural baseline against which the benefits of calibration-aware training can be evaluated.
+
+Relevance to CADRL. ScoreGrad is one of the most important references for the project because it provides the direct bridge between score-based diffusion models and probabilistic forecasting. The paper shows how conditional score learning can replace traditional likelihood-based forecasting, establishes the SDE-based interpretation of uncertainty generation, and provides the most natural foundation for extending diffusion learning with calibration-aware objectives. If TimeGrad supplies the practical forecasting benchmark, ScoreGrad supplies the theoretical framework most closely aligned with the proposed calibration-aware diffusion residual learning methodology.
 
 %------------------------------------------------
 
@@ -192,20 +930,556 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Dawid (1982): The Well-Calibrated Bayesian}
 \href{https://fitelson.org/seminar/dawid.pdf}{Link}
 
+The paper investigates the relationship between Bayesian coherence and calibration. Calibration is defined as agreement between assigned probabilities and long-run observed frequencies. If a forecaster repeatedly assigns probability \(p\) to an event, then calibration requires that approximately a proportion \(p\) of those events actually occur. Formally, calibration connects probabilistic forecasts with empirical outcomes and serves as a fundamental criterion for evaluating uncertainty estimates.
+
+The paper adopts a sequential forecasting framework. Let
+
+\[\mathcal F_0 \subseteq \mathcal F_1 \subseteq \cdots\]
+
+denote the information available over time. At time \(i-1\), the forecaster assigns a probability to an event \(S_i \in \mathcal F_i\). Define
+
+\[Y_i=\mathbf 1_{S_i},\]
+
+and the forecast probability
+
+\[\gamma_i=P(S_i|\mathcal F_{i-1})=E[Y_i|\mathcal F_{i-1}].\]
+
+The central question is whether a coherent Bayesian should expect these probabilities to be calibrated.
+
+The key observation is that conditional expectations form a martingale sequence. Since
+
+\[E[Y_i-\gamma_i|\mathcal F_{i-1}]=0,\]
+
+the forecast error
+
+\[e_i=Y_i-\gamma_i\]
+
+has zero conditional mean. Summing over observations yields
+
+\[\sum_{i=1}^{n}(Y_i-\gamma_i),\]
+
+which behaves as a martingale. Applying martingale convergence arguments, Dawid proves that empirical frequencies converge to forecast probabilities. Specifically, for any admissible subset of forecasts,
+
+\[\frac{\sum_{i=1}^{n}Y_i}{\sum_{i=1}^{n}1}-\frac{\sum_{i=1}^{n}\gamma_i}{\sum_{i=1}^{n}1}\rightarrow 0.\]
+
+Thus, according to the Bayesian's own probability model, forecasts are almost surely calibrated.
+
+The result can be interpreted as a calibration theorem. Suppose the forecaster repeatedly issues forecasts close to some value \(p\). Let
+
+\[A_p=\{i:\gamma_i \approx p\}.\]
+
+Then the theorem implies
+
+\[\frac{\sum_{i\in A_p}Y_i}{|A_p|}\rightarrow p.\]
+
+In words, among all events assigned probability \(p\), approximately a fraction \(p\) occur. Consequently, a coherent Bayesian necessarily expects to be calibrated.
+
+One of the most interesting philosophical observations is that calibration is not imposed externally. Instead, it emerges automatically from coherence and conditional probability theory. The Bayesian does not need a separate calibration mechanism. If his probability assignments satisfy the laws of probability, then calibration follows from his own internal model of uncertainty.
+
+The paper also highlights a subtle limitation. A Bayesian who believes his model is correct necessarily expects to be calibrated, even if the model is objectively misspecified. In practice, poor calibration often arises because the assumed model fails to represent reality. This distinction between internal calibration and external calibration is highly relevant for modern machine learning systems. A model may be internally coherent while remaining poorly calibrated relative to observed data.
+
+From the perspective of uncertainty quantification, the paper establishes calibration as a fundamental property of probabilistic forecasts. Modern calibration metrics such as Expected Calibration Error (ECE), reliability diagrams, and PIT histograms can all be viewed as empirical approximations of Dawid's underlying notion of agreement between probabilities and frequencies.
+
+A important insight concerns residual uncertainty. Suppose a forecasting model produces predictions
+
+\[\hat y_t,\]
+
+and residuals
+
+\[r_t=y_t-\hat y_t.\]
+
+Learning the residual distribution alone is insufficient if the resulting predictive intervals are systematically overconfident or underconfident. Dawid's framework suggests that uncertainty models should ultimately be judged by whether empirical frequencies match predicted probabilities. This observation directly motivates calibration-aware residual learning.
+
+The paper also provides a useful theoretical justification for reliability diagrams and conformal prediction. Reliability diagrams estimate the empirical relationship between forecast probabilities and observed frequencies, while conformal prediction seeks finite-sample coverage guarantees. Both approaches can be viewed as practical implementations of Dawid's calibration principle.
+
+Relevance to CADRL. This paper provides the foundational definition of calibration and establishes the theoretical connection between coherent probability forecasts and empirical frequencies. The most important contribution for the project is the idea that uncertainty estimates should be evaluated through probability-frequency agreement. CADRL extends this perspective by incorporating calibration directly into diffusion residual learning, making Dawid's calibration principle not merely an evaluation criterion but an explicit training objective.
+
 \subsubsection{Guo et al. (2017): On Calibration of Modern Neural Networks}
 \href{https://arxiv.org/abs/1706.04599}{Link}
+
+The paper demonstrates that modern deep neural networks are often poorly calibrated despite achieving excellent predictive accuracy. Calibration refers to the agreement between predicted confidence and empirical correctness frequencies. If a classifier assigns confidence \(p\) to a collection of predictions, then approximately a proportion \(p\) of those predictions should be correct. The central finding is that advances that improve predictive accuracy, such as increased depth, width, Batch Normalization, and reduced regularization, often worsen calibration.
+
+The paper formalizes perfect calibration through
+
+\[P(\hat Y = Y \mid \hat P = p)=p,\qquad\forall p\in[0,1],\]
+
+where \(\hat P\) denotes the model's reported confidence and \(\hat Y\) the predicted class label. This definition can be viewed as a finite-sample operationalization of Dawid's calibration principle. Calibration therefore measures the agreement between predicted probabilities and observed frequencies.
+
+To assess calibration empirically, the paper introduces reliability diagrams. Predictions are partitioned into confidence bins
+
+\[B_m=\left\{i:\hat p_i\in\left(\frac{m-1}{M},\frac{m}{M}\right]\right\},\]
+
+and for each bin the empirical accuracy is computed as
+
+\[\text{acc}(B_m)=\frac1{|B_m|}\sum_{i\in B_m}\mathbf 1(\hat y_i=y_i),\]
+
+while average confidence is
+
+\[\text{conf}(B_m)=\frac1{|B_m|}\sum_{i\in B_m}\hat p_i.\]
+
+A perfectly calibrated model satisfies
+
+\[\text{acc}(B_m)=\text{conf}(B_m)\]
+
+for all bins. Reliability diagrams visualize deviations from this identity and remain one of the most widely used calibration diagnostics in machine learning.
+
+The paper's most influential contribution is the Expected Calibration Error (ECE). Calibration is defined theoretically by
+
+\[E_{\hat P}\left[\left|P(\hat Y=Y\mid\hat P=p)-p\right|\right],\]
+
+which is approximated empirically through
+
+\[\text{ECE}=\sum_{m=1}^{M}\frac{|B_m|}{n}\left|\text{acc}(B_m)-\text{conf}(B_m)\right|.\]
+
+ECE therefore measures the average discrepancy between confidence and accuracy. Lower values indicate better calibration. Although ECE is not differentiable in its original form, it became the dominant calibration metric used in subsequent research.
+
+The paper also defines Maximum Calibration Error (MCE),
+
+\[\text{MCE}=\max_m\left|\text{acc}(B_m)-\text{conf}(B_m)\right|,\]
+
+which measures worst-case calibration failure. While ECE captures average behavior, MCE highlights extreme deviations.
+
+A surprising empirical result is that modern neural networks are often more accurate but less calibrated than older architectures. The authors show that increasing network depth, increasing width, using Batch Normalization, and reducing weight decay frequently increase calibration error. Modern networks tend to produce overly confident predictions. Consequently, predictive confidence should not automatically be interpreted as predictive reliability.
+
+The paper argues that negative log-likelihood (NLL) and calibration are distinct objectives. The standard classification loss is
+
+\[L_{\text{NLL}}=-\sum_{i=1}^{n}\log \hat\pi(y_i|x_i),\]
+
+which is minimized when the estimated conditional distribution matches the true conditional distribution. However, minimizing NLL alone does not guarantee calibration. A model can achieve excellent likelihood while remaining systematically overconfident or underconfident. This observation is particularly important for CADRL because diffusion models are typically trained solely through generative objectives analogous to likelihood optimization.
+
+The authors evaluate several post-hoc calibration methods, including histogram binning, isotonic regression, Platt scaling, Bayesian binning, and temperature scaling. The most important result is that temperature scaling performs remarkably well despite its simplicity. Let \(z\) denote the pre-softmax logits. Temperature scaling replaces
+
+\[p_i=\frac{\exp(z_i)}{\sum_j\exp(z_j)}\]
+
+with
+
+\[p_i(T)=\frac{\exp(z_i/T)}{\sum_j\exp(z_j/T)},\]
+
+where \(T>0\) is a scalar parameter estimated on a validation set. Larger values of \(T\) soften confidence estimates without altering predicted classes. The method improves calibration while preserving classification accuracy.
+
+While Guo et al. do not propose trainable calibration objectives, they establish ECE as the standard calibration target that later work attempts to optimize.
+
+The paper also provides a useful warning for uncertainty quantification. Increased model complexity does not necessarily improve uncertainty estimates. In fact, larger models often become more overconfident. This observation is directly relevant to diffusion residual learning. A highly expressive diffusion model may learn a complex residual distribution while still producing poorly calibrated uncertainty estimates. Consequently, calibration must be evaluated independently of generative performance.
+
+Relevance to CADRL. This paper provides the modern empirical foundation for calibration research. It formalizes reliability diagrams, introduces Expected Calibration Error (ECE), demonstrates that modern deep models are often miscalibrated, and establishes the distinction between predictive accuracy and calibration quality. Most importantly, it motivates the central CADRL hypothesis that calibration should not merely be evaluated after learning but should instead influence the learning process itself.
 
 \subsubsection{Huang, Park, and Simeone (2023): Calibration-Aware Bayesian Learning}
 \href{https://arxiv.org/abs/2305.07504}{Link}
 
+The paper proposes Calibration-Aware Bayesian Neural Networks (CA-BNNs), a framework that combines Bayesian learning with calibration-aware regularization. The central motivation is that existing approaches improve calibration through two largely separate mechanisms. Bayesian learning introduces a data-independent regularizer through a prior distribution and captures epistemic uncertainty via model averaging, while calibration-aware frequentist learning introduces a data-dependent regularizer that explicitly penalizes calibration errors. The paper argues that each approach addresses a different aspect of uncertainty and that combining them can yield better-calibrated predictive distributions.
+
+The authors begin by distinguishing frequentist and Bayesian learning. In standard supervised learning, a classifier
+
+\[p(y|x,\theta)\]
+
+is trained by minimizing cross-entropy,
+
+\[L(\theta|D)=-\sum_{(x_i,y_i)\in D}\log p(y_i|x_i,\theta).\]
+
+The resulting parameter estimate
+
+\[\theta_{\text{tr}}=\arg\min_\theta L(\theta|D)\]
+
+defines a single model. While such models often achieve high predictive accuracy, they are frequently overconfident and poorly calibrated.
+
+Bayesian learning instead treats parameters as random variables. Let
+
+\[q(\theta|\phi)\]
+
+denote a variational posterior approximation and
+
+\[p(\theta)\]
+
+a prior distribution. Predictions are made by averaging over model uncertainty,
+
+\[p(y|x,D)=E_{\theta\sim q(\theta|\phi_{\text{tr}})}[p(y|x,\theta)].\]
+
+The variational posterior is learned by minimizing the free energy objective
+
+\[\mathcal L_{\text{VI}}=E_{\theta\sim q(\theta|\phi)}[L(\theta|D)]+\beta\,\KL(q(\theta|\phi)\|p(\theta)).\]
+
+The KL divergence term acts as a data-independent regularizer that constrains the posterior toward the prior. This formulation naturally captures epistemic uncertainty because predictions are averaged across many plausible parameter settings.
+
+The paper emphasizes that Bayesian learning does not automatically guarantee calibration under model misspecification. If the assumed prior or likelihood is incorrect, posterior predictive probabilities can still become overconfident. This observation is particularly important because it motivates the broader CADRL philosophy: learning a probability distribution accurately does not necessarily imply producing calibrated uncertainty estimates.
+
+The paper reviews the standard definition of calibration. Let
+
+\[\hat y(x)=\arg\max_y p_{\text{tr}}(y|x)\]
+
+denote the predicted label and
+
+\[r_i=p_{\text{tr}}(\hat y(x_i)|x_i)\]
+
+the associated confidence. A perfectly calibrated model satisfies
+
+\[P(y=\hat y(x)\mid r_i=\pi)=\pi,\qquad\forall \pi\in[0,1].\]
+
+Thus, among all predictions made with confidence \(\pi\), a proportion \(\pi\) should be correct.
+
+The paper adopts the Expected Calibration Error (ECE) introduced by Guo et al. (2017). Confidence values are partitioned into bins \(B_m\), and calibration error is measured through
+
+\[\text{ECE}=\sum_{m=1}^{M}\frac{|B_m|}{\sum_{m'}|B_{m'}|}\,\big|\text{acc}(B_m)-\text{conf}(B_m)\big|,\]
+
+where
+
+\[\text{acc}(B_m)=\frac1{|B_m|}\sum_{i\in B_m}c_i\]
+
+and
+
+\[\text{conf}(B_m)=\frac1{|B_m|}\sum_{i\in B_m}r_i.\]
+
+This metric quantifies the discrepancy between empirical accuracy and reported confidence.
+
+The paper then reviews Calibration-Aware Frequentist Neural Networks (CA-FNNs), introduced previously by the authors. The key idea is to augment the standard cross-entropy objective with a differentiable approximation of calibration error,
+
+\[\mathcal L_{\text{CA-FNN}}=L(\theta|D)+\lambda\,A_{\text{ECE}}(\theta|D),\]
+
+where
+
+\[A_{\text{ECE}}\]
+
+denotes a differentiable surrogate of ECE. Calibration is therefore incorporated directly into training rather than being evaluated post hoc.
+
+The main contribution of the paper is extending this idea to Bayesian learning. The proposed CA-BNN objective combines the Bayesian variational objective with a calibration regularizer,
+
+\[\mathcal L_{\text{CA-BNN}}=E_{\theta\sim q(\theta|\phi)}[L(\theta|D)]+\beta\,\KL(q(\theta|\phi)\|p(\theta))+\lambda\,A_{\text{ECE}}(\phi|D).\]
+
+This objective contains three distinct components. The expected loss encourages predictive accuracy, the KL term captures epistemic uncertainty through Bayesian regularization, and the calibration term explicitly penalizes probability-frequency mismatch.
+
+Conceptually, this is the most important equation in the paper because it demonstrates how calibration can be incorporated directly into the learning objective rather than being treated as a separate evaluation metric. The calibration term acts as a feedback signal that influences the learned predictive distribution.
+
+The paper also discusses differentiable calibration metrics, including Maximum Mean Calibration Error (MMCE) and differentiable ECE approximations. Since standard ECE involves non-differentiable binning operations, it cannot be optimized directly through gradient descent. The authors therefore rely on differentiable surrogates that approximate calibration error while remaining compatible with modern optimization methods.
+
+Empirically, CA-BNN improves calibration relative to both standard Bayesian neural networks and calibration-aware frequentist models. The results suggest that Bayesian uncertainty and calibration regularization are complementary rather than competing mechanisms. Bayesian learning captures epistemic uncertainty, while calibration regularization explicitly aligns confidence with empirical correctness.
+
+For CADRL, this paper is arguably the single most important conceptual reference. The proposed framework has exactly the structure envisioned for calibration-aware diffusion residual learning. Standard diffusion models optimize
+
+\[\mathcal L_{\text{diffusion}},\]
+
+while CADRL proposes
+
+\[\mathcal L_{\text{CADRL}}=\mathcal L_{\text{diffusion}}+\lambda\mathcal L_{\text{calibration}}.\]
+
+This mirrors the CA-BNN construction almost perfectly. The primary difference is that CA-BNN applies calibration regularization to parameter learning, whereas CADRL applies calibration regularization to residual distribution learning.
+
+The paper therefore provides a direct methodological precedent for incorporating calibration into generative learning objectives. It establishes that calibration can be treated as an optimization target, demonstrates how calibration regularization interacts with uncertainty modeling, and provides a blueprint for designing calibration-aware diffusion objectives.
+
+CADRL can be viewed as extending this philosophy from Bayesian parameter learning to diffusion-based residual learning. Consequently, CA-BNN provides both the strongest conceptual justification and the most direct methodological template for calibration-aware diffusion residual learning.
+
 \subsubsection{Bohdal et al. (2021): Meta-Calibration: Learning of Model Calibration Using Differentiable Expected Calibration Error}
 \href{https://arxiv.org/abs/2106.09613}{Link}
+
+The paper proposes Meta-Calibration, a framework for directly optimizing calibration through differentiable learning objectives. The central motivation is that calibration is usually treated as an evaluation criterion rather than a training objective. Existing methods such as temperature scaling, label smoothing, and focal loss may improve calibration indirectly, but they do not explicitly optimize calibration metrics themselves. The paper addresses this limitation by introducing a differentiable approximation to Expected Calibration Error (ECE) and using it within a meta-learning framework.
+
+Calibration is defined as agreement between predictive confidence and empirical accuracy. Given a classifier with confidence prediction
+
+\[r_i=\max_k p(y=k|x_i),\]
+
+perfect calibration requires
+
+\[P(\hat y_i=y_i\mid r_i=\pi)=\pi,\qquad\forall \pi\in[0,1].\]
+
+In practice, calibration is measured through Expected Calibration Error (ECE). Let
+
+\[B_m=\left\{i:r_i\in\left(\frac{m-1}{M},\frac{m}{M}\right]\right\}\]
+
+denote confidence bins. The empirical accuracy and confidence within each bin are
+
+\[\text{acc}(B_m)=\frac1{|B_m|}\sum_{i\in B_m}\mathbf 1(\hat y_i=y_i),\]
+
+and
+
+\[\text{conf}(B_m)=\frac1{|B_m|}\sum_{i\in B_m}r_i.\]
+
+The standard ECE metric is
+
+\[\text{ECE}=\sum_{m=1}^{M}\frac{|B_m|}{n}\left|\text{acc}(B_m)-\text{conf}(B_m)\right|.\]
+
+A major problem is that ECE is not differentiable because bin assignments involve discontinuous indicator functions. Consequently, standard ECE cannot be optimized directly through gradient descent.
+
+The paper's first contribution is Differentiable Expected Calibration Error (DECE). Instead of assigning observations to bins through hard indicators, the authors replace bin membership with smooth differentiable weights. Let
+
+\[c_m\]
+
+denote the center of bin \(m\). Soft bin membership is defined using a Gaussian kernel,
+
+\[o_m(r_i)=\frac{\exp\left(-\frac{(r_i-c_m)^2}{T}\right)}{\sum_{m'}\exp\left(-\frac{(r_i-c_{m'})^2}{T}\right)},\]
+
+where \(T\) controls smoothness. Each observation therefore contributes partially to multiple bins rather than belonging exclusively to one bin.
+
+Using these soft assignments, differentiable bin counts become
+
+\[|B_m|=\sum_i o_m(r_i),\]
+
+and differentiable confidence estimates become
+
+\[\text{conf}(B_m)=\frac{\sum_i o_m(r_i)r_i}{\sum_i o_m(r_i)}.\]
+
+Similarly, differentiable accuracies are
+
+\[\text{acc}(B_m)=\frac{\sum_i o_m(r_i)c_i}{\sum_i o_m(r_i)},\]
+
+where
+
+\[c_i=\mathbf 1(\hat y_i=y_i).\]
+
+The resulting Differentiable ECE (DECE) is
+
+\[\text{DECE}=\sum_m\frac{|B_m|}{\sum_{m'}|B_{m'}|}\left|\text{acc}(B_m)-\text{conf}(B_m)\right|.\]
+
+Since all quantities are differentiable, gradients can propagate through the calibration metric. This is the paper's most important technical contribution.
+
+A second major observation is that calibration itself exhibits a generalization gap. The authors demonstrate empirically that training-set calibration may continue improving while validation calibration deteriorates. Consequently, directly minimizing training calibration error may lead to calibration overfitting. This mirrors the familiar distinction between training and validation accuracy.
+
+To address this issue, the paper introduces a meta-learning framework. Let
+
+\[\theta\]
+
+denote model parameters and
+
+\[\lambda\]
+
+denote calibration-related hyperparameters. The inner optimization updates model parameters using training data,
+
+\[\theta'=\theta-\alpha\nabla_\theta L_{\text{train}}(\theta,\lambda),\]
+
+while the outer optimization updates hyperparameters by minimizing validation calibration error,
+
+\[\lambda\leftarrow\lambda-\eta\nabla_\lambda\text{DECE}_{\text{val}}(\theta').\]
+
+This bilevel optimization framework explicitly optimizes validation calibration rather than training calibration.
+
+The authors instantiate the framework using label smoothing. Standard label smoothing replaces one-hot labels $y$ with softened targets
+
+\[y'=(1-\epsilon)y+\frac{\epsilon}{K}\mathbf 1,\]
+
+where \(K\) is the number of classes. Rather than using a fixed smoothing parameter, Meta-Calibration learns class-dependent smoothing coefficients through the outer optimization objective. Calibration quality therefore directly influences the learned regularization strategy.
+
+One of the most important conceptual messages of the paper is that calibration should be viewed as an optimization target rather than merely an evaluation metric. Historically, calibration research focused on post-hoc corrections such as temperature scaling. Meta-Calibration instead treats calibration as a first-class learning objective.
+
+The largest technical challenge is identifying a calibration term that admits gradient-based optimization. DECE provides a concrete example of how a traditionally non-differentiable calibration metric can be converted into a trainable objective.
+
+The paper also highlights a distinction that may become important for CADRL. Simply optimizing calibration on training residuals may not yield calibrated predictive distributions on unseen data. The meta-learning framework suggests that calibration-aware diffusion models may eventually benefit from validation-based calibration objectives rather than purely training-based objectives.
+
+Another useful insight is that calibration can be optimized without changing the underlying model architecture. Meta-Calibration leaves the neural network unchanged and instead modifies the learning objective. This aligns closely with the CADRL philosophy. The contribution is not a new diffusion architecture but a new learning procedure that augments diffusion training with calibration feedback.
+
+Relevance to CADRL. This paper provides the strongest technical justification for trainable calibration objectives. Its differentiable ECE construction demonstrates how calibration can be incorporated into gradient-based learning, while its meta-learning framework shows how calibration can serve as an explicit optimization target. For CADRL, DECE represents one of the most promising candidates for a calibration-aware diffusion objective and provides a concrete blueprint for transforming calibration from a post-hoc evaluation metric into a learning signal.
 
 \subsubsection{Kumar et al. (2018): Trainable Calibration Measures for Neural Networks from Kernel Mean Embeddings}
 \href{https://proceedings.mlr.press/v80/kumar18a.html}{Link}
 
+The paper proposes Maximum Mean Calibration Error (MMCE), a differentiable calibration measure based on reproducing kernel Hilbert spaces (RKHS). The central motivation is that standard Expected Calibration Error (ECE) is not suitable as a training objective because it depends on hard confidence binning, making it highly discontinuous and non-differentiable. The authors seek a calibration measure that can be optimized jointly with predictive objectives through gradient-based learning.
+
+The paper adopts the standard calibration framework. For a classifier \(N_\theta(y|x)\), define the predicted label
+
+\[\hat y_i=\arg\max_y N_\theta(y|x_i),\]
+
+the confidence score
+
+\[r_i=N_\theta(\hat y_i|x_i),\]
+
+and the correctness indicator
+
+\[c_i=\mathbf 1(\hat y_i=y_i).\]
+
+A model is perfectly calibrated if
+
+\[P(c=1|r=\alpha)=\alpha,\qquad\forall \alpha\in[0,1].\]
+
+Thus, among all predictions made with confidence \(\alpha\), approximately an \(\alpha\) fraction should be correct.
+
+The paper reviews Expected Calibration Error (ECE),
+
+\[\text{ECE}=E_r\left[\left|E[c|r]-r\right|\right],\]
+
+which measures the discrepancy between empirical accuracy and confidence. In practice, ECE is estimated using confidence bins. Although widely used, ECE is unsuitable for optimization because small changes in confidence values can move observations between bins, creating discontinuous gradients.
+
+The authors propose a fundamentally different approach based on kernel mean embeddings. The key observation is that perfect calibration implies
+
+\[E[c-r|r]=0.\]
+
+If calibration holds, the residual
+
+\[c-r\]
+
+has conditional expectation zero for every confidence level. The paper therefore reframes calibration as a moment-matching problem.
+
+Let
+
+\[\mathcal H\]
+
+denote an RKHS induced by a universal kernel
+
+\[k(\cdot,\cdot),\]
+
+with feature map
+
+\[\phi:[0,1]\rightarrow\mathcal H.\]
+
+The proposed Maximum Mean Calibration Error (MMCE) is
+
+\[\text{MMCE}(P)=\left\|E[(c-r)\phi(r)]\right\|_{\mathcal H}.\]
+
+This quantity measures the discrepancy between confidence and correctness across the entire confidence space. If calibration holds exactly,
+
+\[E[(c-r)\phi(r)]=0,\]
+
+implying
+
+\[\text{MMCE}(P)=0.\]
+
+The authors prove that if the kernel is universal, then
+
+\[\text{MMCE}(P)=0\]
+
+if and only if the model is perfectly calibrated. Thus MMCE is not merely a heuristic but a theoretically valid calibration measure.
+
+Given a finite sample
+
+\[D=\{(r_1,c_1),\ldots,(r_m,c_m)\},\]
+
+the empirical estimate becomes
+
+\[\widehat{\text{MMCE}}=\left\|\frac1m\sum_{i=1}^{m}(c_i-r_i)\phi(r_i)\right\|_{\mathcal H}.\]
+
+Using the reproducing property of RKHSs, this simplifies to
+
+\[\widehat{\text{MMCE}}^2=\frac1{m^2}\sum_{i=1}^{m}\sum_{j=1}^{m}(c_i-r_i)(c_j-r_j)k(r_i,r_j).\]
+
+This kernelized form is one of the paper's most important results because it yields a fully differentiable calibration objective.
+
+The authors show that the empirical estimator is consistent and converges at rate
+
+\[O(m^{-1/2}),\]
+
+providing theoretical guarantees analogous to those enjoyed by Maximum Mean Discrepancy (MMD) estimators.
+
+Training is performed by augmenting the standard negative log-likelihood objective with MMCE. The proposed optimization problem is
+
+\[\min_\theta\;\text{NLL}(\theta)+\lambda\,\text{MMCE}(\theta).\]
+
+Explicitly,
+
+\[\min_\theta\;-\sum_i\log N_\theta(y_i|x_i)+\lambda\,\widehat{\text{MMCE}}(\theta).\]
+
+This is perhaps the most important equation in the paper because it represents one of the earliest examples of calibration being optimized directly during training rather than corrected post hoc.
+
+The paper further proposes a weighted version of MMCE. The motivation is that modern neural networks often achieve high accuracy, leading to a severe imbalance between correct and incorrect predictions. Since calibration errors are most visible among incorrect predictions, the authors reweight pairs involving misclassified observations. The resulting weighted MMCE places greater emphasis on calibration failures and empirically improves performance.
+
+A particularly useful insight is the interpretation of MMCE as a pairwise regularizer. Negative log-likelihood treats each observation independently,
+
+\[L_{\text{NLL}}=-\sum_i \log p(y_i|x_i),\]
+
+whereas MMCE couples observations through kernel interactions,
+
+\[k(r_i,r_j).\]
+
+Calibration therefore becomes a global property of the predictive distribution rather than an individual prediction property.
+
+Empirically, MMCE significantly reduces calibration error while preserving high-confidence predictions better than entropy regularization and temperature scaling. The authors argue that many existing calibration methods reduce overconfidence simply by shrinking all confidence values. MMCE instead encourages confidence values to align with empirical correctness frequencies, allowing genuinely confident predictions to remain confident.
+
+A central challenge is choosing a calibration loss that admits gradient-based optimization. MMCE provides one of the strongest candidates because it is differentiable, theoretically justified, and explicitly designed for training.
+
+The RKHS formulation may also be particularly attractive for probabilistic forecasting. Instead of defining calibration through discrete confidence bins, MMCE captures discrepancies across the entire predictive distribution. This avoids many of the instability issues associated with ECE and reliability diagrams.
+
+Another noteworthy feature is that MMCE optimizes calibration directly rather than indirectly. Most uncertainty-aware learning methods optimize likelihoods, proper scoring rules, or Bayesian objectives and evaluate calibration afterward. MMCE treats calibration itself as the optimization target. This philosophy aligns closely with the broader goals of calibration-aware diffusion residual learning.
+
+Relevance to CADRL. This paper provides the strongest candidate for a trainable calibration loss. The RKHS formulation yields a differentiable calibration objective with theoretical guarantees, making it directly compatible with gradient-based diffusion training. Among the calibration papers reviewed thus far, MMCE is arguably the most practical mechanism for implementing
+
+\[\mathcal L_{\text{CADRL}}=\mathcal L_{\text{diffusion}}+\lambda\mathcal L_{\text{calibration}},\]
+
+and therefore represents one of the most important methodological references for the project.
+
 \subsubsection{Detommaso et al. (2022): Uncertainty Calibration in Bayesian Neural Networks via Distance-Aware Priors}
 \href{https://arxiv.org/abs/2207.08200}{Link}
+
+The paper proposes Distance-Aware Priors (DAPs), a method for improving uncertainty calibration in Bayesian neural networks, particularly in out-of-distribution (OOD) regions. The central observation is that epistemic uncertainty should increase as predictions move farther away from the training data. Standard Bayesian neural networks often fail to exhibit this behavior because commonly used priors are independent of the input space and therefore do not explicitly encode distance-dependent uncertainty.
+
+The paper begins with the distinction between aleatoric and epistemic uncertainty. Aleatoric uncertainty captures irreducible randomness in the data generating process, while epistemic uncertainty arises from lack of knowledge about the underlying model. In principle, epistemic uncertainty should be small near observed data and large in regions where little or no data is available. Many Bayesian neural networks fail to satisfy this property, producing overconfident predictions far from the training domain.
+
+Consider a Bayesian neural network with parameters
+
+\[\theta\in\mathbb R^{n_\theta}.\]
+
+The predictive distribution is
+
+\[p(y^*|x^*,x,y)=\int p(y^*|\theta,x^*)p(\theta|x^*,x,y)\,d\theta.\]
+
+Standard Bayesian models assume that the prior distribution over parameters is independent of the input location,
+
+\[p(\theta|x^*)=p(\theta).\]
+
+The authors argue that this assumption is often unrealistic because our uncertainty about the model should depend on where in the input space a prediction is made.
+
+The key innovation is to allow the prior itself to depend on the distance between a test point and the training data. Rather than using a fixed prior variance, the prior variance increases as the input moves away from the observed data manifold. This yields a distance-aware prior
+
+\[p(\theta|x^*),\]
+
+which induces larger predictive uncertainty in regions lacking data support.
+
+The authors focus on Gaussian priors. A standard Bayesian neural network typically uses
+
+\[\theta\sim N(0,\sigma_0^2I).\]
+
+DAP replaces this with
+
+\[\theta\sim N\left(0,\sigma^2(x^*)I\right),\]
+
+where
+
+\[\sigma^2(x^*)\]
+
+depends on the distance between the prediction location and the training set.
+
+To quantify distance, the paper introduces a learned feature representation
+
+\[\phi(x),\]
+
+obtained from the neural network itself. Distance is computed in feature space rather than raw input space,
+
+\[d(x^*)=\min_i\|\phi(x^*)-\phi(x_i)\|.\]
+
+This choice is motivated by the observation that learned feature spaces often better capture semantic similarity than the original inputs.
+
+The prior variance is then parameterized as a function of distance,
+
+\[\sigma^2(x^*)=\sigma_0^2+\alpha\,g(d(x^*)),\]
+
+where \(g(\cdot)\) is a monotone increasing function and \(\alpha\) controls the strength of the uncertainty inflation. Consequently,
+
+\[d(x^*)\uparrow\quad\Rightarrow\quad\sigma^2(x^*)\uparrow,\]
+
+meaning that parameter uncertainty increases as the test point moves farther from the training data.
+
+One of the most attractive aspects of the method is that calibration can be performed as a post-processing step. The authors derive an importance-sampling correction that adjusts the predictive distribution without requiring retraining of the underlying Bayesian neural network. Suppose
+
+\[p_0(\theta)\]
+
+denotes the original prior and
+
+\[p_{\text{DAP}}(\theta|x^*)\]
+
+the distance-aware prior. Posterior expectations under the new prior can be approximated through importance weights
+
+\[w(\theta)=\frac{p_{\text{DAP}}(\theta|x^*)}{p_0(\theta)}.\]
+
+Predictions are then reweighted accordingly. This allows uncertainty calibration to be performed after model training.
+
+The paper introduces a calibration objective to select the distance-aware prior parameters. Rather than maximizing likelihood alone, the goal is to achieve a desired level of uncertainty in OOD regions. The calibration procedure therefore explicitly targets uncertainty quality rather than predictive accuracy.
+
+A major conceptual contribution is the recognition that uncertainty quality depends on inductive biases built into the prior. Traditional Bayesian learning assumes that uncertainty emerges automatically from posterior inference. The authors argue that prior design plays a critical role in determining whether uncertainty behaves sensibly outside the training domain.
+
+From the perspective of CADRL, the paper provides an important example of calibration-aware uncertainty modeling. Standard Bayesian learning optimizes
+
+\[\mathcal L_{\text{VI}}=E_q[L]+\beta\KL(q||p),\]
+
+where calibration is evaluated only after training. DAP modifies the uncertainty mechanism itself so that uncertainty grows appropriately in poorly supported regions of the input space. This is conceptually similar to CADRL's goal of modifying diffusion residual learning to produce calibrated uncertainty estimates.
+
+The paper also highlights a broader lesson about uncertainty quantification. Accurately learning a predictive distribution does not guarantee well-behaved uncertainty away from observed data. Calibration therefore requires more than likelihood optimization. This observation aligns closely with the central motivation of CADRL, namely that generative objectives alone may be insufficient for producing reliable uncertainty estimates.
+
+An especially useful insight for future work is the distinction between in-distribution calibration and out-of-distribution calibration. Most calibration metrics such as ECE evaluate probability-frequency agreement within the observed data distribution. DAP focuses instead on how uncertainty behaves in unseen regions. If CADRL is extended beyond forecasting, similar notions of distance-aware calibration may become relevant.
+
+Relevance to CADRL. This paper provides an example of uncertainty calibration achieved through modification of the uncertainty model rather than the prediction model. Its primary contribution is the idea that uncertainty should increase as the model moves away from regions supported by data. While CADRL focuses on residual diffusion models rather than Bayesian priors, both approaches share the objective of improving uncertainty quality beyond what is obtained from standard probabilistic learning objectives alone. The paper also highlights the importance of distinguishing predictive accuracy from uncertainty calibration, particularly under distribution shift and model misspecification.
 
 %------------------------------------------------
 
@@ -214,12 +1488,245 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Hüllermeier and Waegeman (2021): Aleatoric and Epistemic Uncertainty in Machine Learning}
 \href{https://link.springer.com/article/10.1007/s10994-021-05946-3}{Link}
 
+The paper provides a comprehensive framework for understanding uncertainty in machine learning and introduces one of the most influential distinctions in modern uncertainty quantification: the separation between aleatoric and epistemic uncertainty. The authors argue that traditional probabilistic machine learning often conflates fundamentally different sources of uncertainty and that distinguishing them is essential for trustworthy prediction, decision making, and uncertainty-aware learning.
+
+The paper begins with the supervised learning setting. Let
+
+\[D=\{(x_i,y_i)\}_{i=1}^{n}\]
+
+denote training data sampled from an unknown distribution
+
+\[P(X,Y).\]
+
+Given a hypothesis space
+
+\[\mathcal H,\]
+
+the goal is to identify a predictor
+
+\[h^*=\arg\min_{h\in\mathcal H}R(h),\]
+
+where the risk is
+
+\[R(h)=\mathbb E[\ell(Y,h(X))].\]
+
+Because the learner only observes a finite sample, uncertainty naturally arises regarding both the optimal predictor and future outcomes.
+
+The central contribution of the paper is the distinction between aleatoric and epistemic uncertainty. Aleatoric uncertainty refers to irreducible randomness in the data-generating process. Even if the true model were known exactly, future outcomes would remain uncertain. Formally, aleatoric uncertainty is associated with the conditional distribution
+
+\[P(Y|X=x).\]
+
+For example, if
+
+\[P(Y=1|X=x)=0.5,\]
+
+the uncertainty arises from intrinsic randomness rather than lack of knowledge.
+
+Epistemic uncertainty, by contrast, arises from ignorance regarding the correct model. It reflects uncertainty about the data-generating process itself and can in principle be reduced through additional information or observations. In machine learning, epistemic uncertainty corresponds to uncertainty regarding which hypothesis
+
+\[h\in\mathcal H\]
+
+best explains the observed data.
+
+A useful decomposition emerges through the law of total variance. Let
+
+\[Y\]
+
+denote a future outcome. Then
+
+\[\Var(Y)=\mathbb E[\Var(Y|\theta)]+\Var(\mathbb E[Y|\theta]).\]
+
+The first term corresponds to aleatoric uncertainty and captures variability that remains even when model parameters are known. The second term corresponds to epistemic uncertainty and reflects uncertainty induced by imperfect knowledge of the model parameters.
+
+The paper emphasizes that standard probabilistic predictions often represent only aleatoric uncertainty. A model may produce probabilities
+
+\[p(y|x),\]
+
+yet still be highly uncertain about whether these probabilities themselves are trustworthy. This distinction becomes especially important in safety-critical applications and under distribution shift.
+
+The authors discuss version-space learning as one of the clearest illustrations of epistemic uncertainty. Given data \(D\), define the version space
+
+\[\mathcal V(D)=\{h\in\mathcal H:h \text{ is consistent with } D\}.\]
+
+If many hypotheses remain plausible, epistemic uncertainty is large. As additional observations are collected, the version space shrinks and epistemic uncertainty decreases. Aleatoric uncertainty, however, remains unchanged because it is inherent to the data-generating process.
+
+The paper surveys several uncertainty representation paradigms. Classical Bayesian inference represents epistemic uncertainty through a posterior distribution
+
+\[p(h|D).\]
+
+Predictions are obtained through model averaging,
+
+\[p(y|x,D)=\int p(y|x,h)p(h|D)\,dh.\]
+
+In this framework, epistemic uncertainty is encoded by posterior dispersion while aleatoric uncertainty is represented by the conditional likelihood
+
+\[p(y|x,h).\]
+
+The paper notes that Bayesian methods provide a principled uncertainty framework but remain vulnerable to model misspecification. If the assumed model class is incorrect, posterior uncertainty may not accurately reflect true uncertainty.
+
+Another major theme is calibration. The authors emphasize that probabilistic predictions should not only be accurate but also calibrated. A model may produce probabilities
+
+\[p(y|x)\]
+
+that appear reasonable while still being overconfident or underconfident. Calibration therefore serves as a diagnostic tool for determining whether predicted probabilities correspond to observed frequencies.
+
+The paper also discusses ensemble methods, Gaussian processes, Bayesian neural networks, conformal prediction, and set-valued prediction as mechanisms for quantifying uncertainty. A common theme across these approaches is the attempt to distinguish reducible uncertainty from irreducible uncertainty.
+
+One particularly relevant observation is that deep neural networks often exhibit low apparent uncertainty even when presented with unfamiliar inputs. This behavior indicates a failure to properly capture epistemic uncertainty. Modern calibration research can therefore be viewed as an attempt to align predicted uncertainty with actual predictive reliability.
+
+For CADRL, the most important conceptual contribution is the interpretation of residual distributions as primarily modeling aleatoric uncertainty. Suppose a forecasting model produces
+
+\[\hat y_t=f(\mathcal F_t),\]
+
+with residuals
+
+\[r_t=y_t-\hat y_t.\]
+
+Learning a diffusion model on residuals effectively learns
+
+\[p(r_t),\]
+
+which represents uncertainty remaining after the deterministic forecasting component has been specified. This residual uncertainty is largely aleatoric in nature. Consequently, CADRL should be viewed primarily as a framework for learning and calibrating aleatoric uncertainty rather than epistemic uncertainty.
+
+The paper also provides an important motivation for calibration-aware learning. Accurately learning a residual distribution does not guarantee that predictive intervals, quantiles, or probabilities will be calibrated. A residual model may capture aleatoric variability while still producing uncertainty estimates that systematically misrepresent true frequencies. This distinction provides strong justification for introducing calibration objectives into diffusion residual learning.
+
+Another useful perspective is that calibration acts as a bridge between aleatoric and epistemic uncertainty. Poor calibration often signals model misspecification or insufficient knowledge of the underlying data-generating process. Thus, calibration-aware residual learning may indirectly compensate for epistemic deficiencies even when modeling aleatoric uncertainty directly.
+
+Relevance to CADRL. This paper provides the uncertainty-theoretic foundation for the project. Its distinction between aleatoric and epistemic uncertainty clarifies precisely what residual diffusion models are learning and why calibration remains necessary even after learning a probabilistic residual distribution. Among all uncertainty references, this paper supplies the clearest conceptual framework for positioning CADRL within the broader uncertainty quantification literature and justifying calibration-aware residual learning as an uncertainty estimation problem rather than merely a generative modeling problem.
+
+
 %------------------------------------------------
 
 \subsection{Conformal Prediction}
 
 \subsubsection{Angelopoulos and Bates (2021): A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification}
 \href{https://arxiv.org/abs/2107.07511}{Link}
+
+Conformal prediction is a framework for constructing prediction sets and prediction intervals with finite-sample statistical guarantees that hold under minimal assumptions. The central result is that valid uncertainty quantification can be obtained without specifying a probabilistic model, distributional family, likelihood function, or Bayesian prior. Instead, conformal prediction relies only on exchangeability, which is satisfied by independent and identically distributed observations.
+
+Suppose a learning algorithm produces predictions
+
+\[\hat f(x).\]
+
+Given a desired error level
+
+\[\alpha\in(0,1),\]
+
+the objective is to construct a prediction set
+
+\[C(x)\]
+
+such that
+
+\[P(Y\in C(X))\ge1-\alpha.\]
+
+Unlike Bayesian credible intervals or likelihood-based confidence intervals, this guarantee is distribution-free and finite-sample.
+
+The paper emphasizes that conformal prediction is model-agnostic. Any predictive model may be used, including neural networks, random forests, Gaussian processes, Bayesian models, diffusion models, or forecasting systems. Conformal prediction therefore acts as a calibration layer placed on top of an existing predictor rather than replacing the predictor itself.
+
+The basic split conformal framework partitions the available data into a training set and a calibration set. The predictive model is trained on the training data and then evaluated on the calibration data to estimate prediction errors. Let
+
+\[(X_1,Y_1),\ldots,(X_n,Y_n)\]
+
+denote calibration observations. Define a nonconformity score
+
+\[s_i=S(X_i,Y_i),\]
+
+which measures how poorly the model predicts observation \(i\).
+
+For regression, the most common choice is the absolute residual
+
+\[s_i=|Y_i-\hat f(X_i)|.\]
+
+Let
+
+\[\hat q\]
+
+denote the empirical quantile
+
+\[\hat q=\text{Quantile}_{\lceil(n+1)(1-\alpha)\rceil/n}(s_1,\ldots,s_n).\]
+
+The conformal prediction interval for a new observation becomes
+
+\[C(X_{n+1})=[\hat f(X_{n+1})-\hat q,\hat f(X_{n+1})+\hat q].\]
+
+A remarkable theorem states that
+
+\[P\Big(Y_{n+1}\in C(X_{n+1})\Big)\ge1-\alpha.\]
+
+This guarantee holds regardless of model quality, provided exchangeability is satisfied.
+
+The paper presents one of the cleanest proofs of conformal validity. Under exchangeability, the rank of the test nonconformity score among all calibration scores is uniformly distributed. Consequently,
+
+\[P\left(s_{n+1}\le\hat q\right)\ge1-\alpha,\]
+
+which immediately yields the coverage guarantee.
+
+One of the most important conceptual messages of the paper is that conformal prediction converts any predictive model into a calibrated uncertainty procedure. Model accuracy influences interval width but not coverage validity. A poor model produces wide intervals, while a strong model produces narrow intervals, yet both maintain the desired coverage guarantee.
+
+The paper introduces Conformalized Quantile Regression (CQR), one of the most influential modern conformal methods. Suppose a model estimates lower and upper conditional quantiles
+
+\[\hat q_L(x),\qquad\hat q_U(x).\]
+
+The calibration score becomes
+
+\[s_i=\max\{\hat q_L(X_i)-Y_i,Y_i-\hat q_U(X_i)\}.\]
+
+After computing the conformal correction
+
+\[\hat q,\]
+
+the interval becomes
+
+\[[\hat q_L(x)-\hat q,\hat q_U(x)+\hat q].\]
+
+CQR adapts interval width to local uncertainty while retaining finite-sample coverage guarantees. This idea is particularly relevant for forecasting and uncertainty quantification.
+
+The paper also discusses conformalizing arbitrary uncertainty estimates. Suppose a model provides a point prediction
+
+\[\hat y(x)\]
+
+and an uncertainty estimate
+
+\[\hat\sigma(x).\]
+
+A normalized nonconformity score can be defined as
+
+\[s_i=\frac{|Y_i-\hat y(X_i)|}{\hat\sigma(X_i)}.\]
+
+The resulting interval becomes
+
+\[[\hat y(x)-\hat q\hat\sigma(x),\hat y(x)+\hat q\hat\sigma(x)].\]
+
+This framework demonstrates that conformal prediction can calibrate uncertainty estimates generated by any underlying uncertainty model.
+
+A recurring theme throughout the paper is the distinction between calibration and efficiency. Coverage validity guarantees that intervals contain the truth with the desired probability, but it does not guarantee that intervals are narrow. Therefore, interval width becomes an important secondary evaluation criterion. Good uncertainty models produce small intervals while maintaining coverage.
+
+The paper discusses several extensions including class-conditional conformal prediction, group-balanced conformal prediction, covariate shift corrections, distribution drift, risk control, outlier detection, and time-series forecasting. These extensions demonstrate that conformal methods can be adapted beyond the classical i.i.d. setting.
+
+Conformal prediction instead leaves the underlying model unchanged and applies a finite-sample correction afterward. In other words,
+
+\[\text{CADRL}=\text{calibration during learning},\]
+
+whereas
+
+\[\text{Conformal}=\text{calibration after learning}.\]
+
+This distinction is crucial because it highlights two fundamentally different philosophies for uncertainty quantification.
+
+The paper suggests an interesting hybrid possibility. Suppose CADRL generates predictive residual samples
+
+\[\tilde r^{(1)},\ldots,\tilde r^{(M)}.\]
+
+These samples define a predictive distribution for future observations. Conformal prediction could then be applied to the resulting predictive intervals, providing finite-sample coverage guarantees on top of the learned diffusion uncertainty model. Such a framework would combine learned uncertainty with distribution-free calibration.
+
+Another important insight is that conformal prediction evaluates uncertainty through empirical coverage rather than likelihood or calibration metrics such as ECE. Consequently, conformal methods naturally complement the calibration-aware objectives studied elsewhere in the literature.
+
+Relevance to CADRL. This paper provides the foundational reference for distribution-free uncertainty quantification. The most important contribution is the finite-sample coverage guarantee
+
+\[P(Y\in C(X))\ge1-\alpha,\]
+
+which holds independently of the underlying predictive model. For the CADRL project, conformal prediction serves as both a benchmark and a potential extension. CADRL seeks to learn calibrated residual distributions through modified diffusion training, while conformal prediction offers a post-hoc mechanism for achieving rigorous coverage guarantees. Together they represent two complementary approaches to uncertainty quantification: calibration-aware learning and distribution-free calibration.
 
 %------------------------------------------------
 
@@ -228,11 +1735,361 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Gneiting and Raftery (2007): Strictly Proper Scoring Rules, Prediction, and Estimation}
 \href{https://sites.stat.washington.edu/raftery/Research/PDF/Gneiting2007jasa.pdf}{Link}
 
+The paper develops the theoretical foundations of proper scoring rules and establishes them as the primary framework for evaluating probabilistic forecasts. A scoring rule assigns a numerical value to a predictive distribution after the true outcome is observed. The central principle is that probabilistic forecasts should be rewarded when they accurately represent uncertainty and penalized when they misrepresent uncertainty. The paper argues that proper scoring rules provide the correct objective functions for probabilistic prediction because they encourage honest reporting of predictive beliefs.
+
+Let $F$ denote a predictive distribution and let $y$ denote the realized outcome. A scoring rule is a function
+
+\[S(F,y)\]
+
+that measures forecast quality. Smaller values are interpreted as better forecasts throughout the paper. A scoring rule is proper if
+
+\[E_{Y\sim G}[S(G,Y)]\le E_{Y\sim G}[S(F,Y)]\]
+
+for every forecast distribution \(F\) and every true distribution \(G\). It is strictly proper if equality holds only when
+
+\[F=G.\]
+
+Thus, strictly proper scoring rules incentivize truthful probability forecasts. If a forecaster genuinely believes the data are generated from \(G\), the optimal forecast is to report \(G\) itself.
+
+A major theoretical result is the connection between proper scoring rules, entropy functions, and Bregman divergences. Define the generalized entropy
+
+\[H(F)=E_{Y\sim F}[S(F,Y)].\]
+
+The associated divergence between distributions is
+
+\[D(F,G)=E_{Y\sim G}[S(F,Y)]-E_{Y\sim G}[S(G,Y)].\]
+
+For any proper scoring rule,
+
+\[D(F,G)\ge0,\]
+
+with equality only when \(F=G\) for strictly proper scores. Consequently, proper scoring rules induce meaningful notions of distance between probability distributions.
+
+One of the most widely used scoring rules is the logarithmic score,
+
+\[S(F,y)=-\log f(y),\]
+
+where
+
+\[f\]
+
+is the predictive density. Minimizing the expected logarithmic score is equivalent to maximizing likelihood. The associated divergence is the Kullback-Leibler divergence,
+
+\[\KL(G\|F)=E_G\left[\log\frac{g(Y)}{f(Y)}\right].\]
+
+The paper emphasizes that likelihood-based evaluation is therefore a special case of the broader proper scoring rule framework.
+
+A key contribution for forecasting applications is the Continuous Ranked Probability Score (CRPS). Given predictive cumulative distribution function
+
+\[F\]
+
+and observation
+
+\[y,\]
+
+CRPS is defined as
+
+\[\text{CRPS}(F,y)=\int_{-\infty}^{\infty}\left(F(z)-\mathbf 1\{y\le z\}\right)^2dz.\]
+
+CRPS measures the discrepancy between the predicted distribution and the observed outcome over the entire support of the variable.
+
+The paper derives an equivalent and highly useful representation,
+
+\[\text{CRPS}(F,y)=E_F|X-y|-\frac12E_F|X-X'|,\]
+
+where
+
+\[X,X'\sim F\]
+
+independently. This representation is particularly important because it can be estimated directly from Monte Carlo samples. For CADRL, where predictive distributions are generated through diffusion sampling, this form is often easier to compute than the integral definition.
+
+An important property is that CRPS generalizes absolute error. If
+
+\[F=\delta_{\hat y},\]
+
+a point mass at \(\hat y\), then
+
+\[\text{CRPS}(F,y)=|\hat y-y|.\]
+
+Thus CRPS extends classical point forecast evaluation to full probabilistic forecasts.
+
+The paper introduces the Energy Score as a multivariate generalization of CRPS. For multivariate observations
+
+\[y\in\mathbb R^d,\]
+
+and predictive distribution \(F\),
+
+\[ES(F,y)=E_F\|X-y\|-\frac12E_F\|X-X'\|.\]
+
+Like CRPS, the energy score rewards sharp predictive distributions that place high probability near the observed outcome. Unlike likelihood-based metrics, it remains tractable in high-dimensional settings and can be estimated directly from generated samples.
+
+The energy score is particularly relevant for multivariate forecasting problems because CRPS is fundamentally univariate. Since CADRL will evaluate multivariate VAR forecasts, the energy score becomes one of the most important forecast quality metrics in the project.
+
+The paper also develops scoring rules for quantile forecasts. Given a predicted quantile
+
+\[q_\alpha,\]
+
+the quantile score is
+
+\[S_\alpha(q_\alpha,y)=(\alpha-\mathbf 1\{y<q_\alpha\})(y-q_\alpha).\]
+
+Minimizing expected quantile score yields the true conditional quantile. This result later became central to quantile regression and conformalized quantile prediction.
+
+Another influential contribution is the interval score. Let
+
+\[[l,u]\]
+
+denote a \((1-\alpha)\)-level prediction interval. The interval score is
+
+\[IS_\alpha(l,u;y)=(u-l)+\frac{2}{\alpha}(l-y)\mathbf 1(y<l)+\frac{2}{\alpha}(y-u)\mathbf 1(y>u).\]
+
+The interval score balances two competing objectives. The first term rewards sharpness through narrow intervals, while the penalty terms punish intervals that fail to contain the realized outcome. This directly operationalizes the paper's broader philosophy that good probabilistic forecasts should be as sharp as possible subject to calibration.
+
+One of the paper's most influential conceptual contributions is the sharpness-calibration paradigm. Calibration refers to statistical consistency between predictive distributions and observed outcomes, while sharpness refers to concentration of predictive distributions. A forecast can always achieve calibration by producing extremely wide intervals, but such forecasts are uninformative. Conversely, extremely sharp forecasts are often poorly calibrated. Good uncertainty quantification therefore requires balancing both properties simultaneously.
+
+This sharpness-calibration framework is highly relevant for CADRL. Calibration-aware diffusion learning seeks to improve calibration, but calibration improvements must not come at the expense of excessively wide predictive distributions. Consequently, evaluation should include both calibration metrics and proper scoring rules.
+
+The paper repeatedly emphasizes that proper scoring rules should be used not only for evaluation but also as optimization objectives. Because strictly proper scoring rules are minimized only by the true distribution, they provide principled loss functions for probabilistic learning. This observation is especially relevant for CADRL because calibration-aware objectives may ultimately combine generative losses with proper scoring rule regularization.
+
+From the perspective of residual learning, suppose a forecasting model produces residual samples
+
+\[\tilde r^{(1)},\ldots,\tilde r^{(M)}.\]
+
+These induce predictive samples
+
+\[\tilde y^{(m)}=\hat y+\tilde r^{(m)}.\]
+
+CRPS and energy scores can then be estimated directly from these Monte Carlo samples without requiring closed-form predictive densities. This makes them particularly attractive evaluation metrics for diffusion-based forecasting systems.
+
+Relevance to CADRL. This paper provides the theoretical foundation for probabilistic forecast evaluation. CRPS, Energy Score, and Interval Score are likely to become the primary forecast quality metrics throughout the thesis. The sharpness-calibration paradigm introduced here aligns closely with the central CADRL objective: improving calibration while maintaining informative predictive distributions. Among all evaluation references, this paper is arguably the most important because it establishes the proper scoring rule framework that will be used to assess whether calibration-aware diffusion residual learning actually improves probabilistic forecasts.
+
 \subsubsection{Dawid (1984): Present Position and Potential Developments: Some Personal Views on Probabilistic Forecasting}
 \href{https://www.jstor.org/stable/2981683?seq=1}{Link}
 
+The paper introduces the prequential approach to statistical inference and forecasting. The central philosophy is that statistical procedures should be judged by the quality of the probability forecasts they produce rather than by their ability to estimate unobservable parameters. Dawid argues that the primary purpose of statistical inference is prediction, and therefore statistical methods should be evaluated according to their sequential predictive performance.
+
+The fundamental object is a sequence of observations
+
+\[X=(X_1,X_2,\ldots).\]
+
+At time \(n\), after observing
+
+\[X^{(n)}=(X_1,\ldots,X_n),\]
+
+a forecasting system produces a predictive distribution
+
+\[P_{n+1}=P(X_{n+1}\mid X^{(n)}).\]
+
+The prediction is then compared against the realized outcome
+
+\[X_{n+1}.\]
+
+This process repeats sequentially, producing a sequence of forecasts and outcomes. Dawid refers to this framework as \emph{prequential} because it combines probability forecasting with sequential prediction.
+
+A key principle is that all statistical procedures can be represented as forecasting systems. Suppose a parametric model
+
+\[\mathcal P=\{P_\theta:\theta\in\Theta\}\]
+
+is given. A forecasting rule converts the observed data into predictive distributions
+
+\[P_{n+1}(\cdot)=P_{\hat\theta_n}(X_{n+1}\in\cdot\mid X^{(n)}),\]
+
+where
+
+\[\hat\theta_n\]
+
+may be an estimator, posterior mean, Bayesian predictive distribution, or any other inferential procedure. Consequently, statistical methods are evaluated through the forecasts they generate rather than through parameter estimates themselves.
+
+One of the paper's most important observations is that likelihood naturally emerges from sequential forecasting. Let
+
+\[p_n(x_n)=P(X_n=x_n\mid X^{(n-1)}).\]
+
+The joint likelihood factorizes as
+
+\[L(\theta)=\prod_{i=1}^{n}p_i(x_i).\]
+
+Taking logarithms yields
+
+\[\log L(\theta)=\sum_{i=1}^{n}\log p_i(x_i).\]
+
+Thus maximizing likelihood is equivalent to maximizing cumulative predictive performance. This interpretation provides a forecasting-based justification for likelihood theory and connects statistical inference directly to prediction quality.
+
+The paper introduces prequential scoring. Suppose a scoring rule
+
+\[S(P,x)\]
+
+assigns a numerical score when forecast \(P\) is followed by observation \(x\). Sequential performance is measured through cumulative score
+
+\[S_n=\sum_{i=1}^{n}S(P_i,X_i).\]
+
+Good forecasting systems are those with favorable long-run cumulative scores. This viewpoint naturally links forecasting, likelihood, and proper scoring rules.
+
+A particularly important example is the logarithmic score
+
+\[S(P,x)=-\log p(x),\]
+
+where
+
+\[p\]
+
+is the predictive density. The cumulative log score becomes
+
+\[-\sum_{i=1}^{n}\log p_i(x_i),\]
+
+which is exactly the negative log-likelihood. Consequently, maximum likelihood estimation can be interpreted as selecting the forecasting system with the best cumulative predictive performance under the logarithmic scoring rule.
+
+The paper argues that many classical statistical concepts admit natural prequential analogues. Consistency, for example, is traditionally defined in terms of parameter estimation,
+
+\[\hat\theta_n\rightarrow\theta_0.\]
+
+Under the prequential framework, consistency becomes a statement about forecasting performance. A forecasting system is prequentially consistent if its predictive distributions converge toward the true data-generating mechanism and achieve asymptotically optimal predictive scores.
+
+Similarly, efficiency can be reformulated through predictive performance rather than estimator variance. Rather than comparing asymptotic variances of estimators, one compares cumulative forecasting losses. This perspective shifts attention away from parameter recovery and toward uncertainty quantification and prediction quality.
+
+The paper emphasizes that probability forecasting requires both calibration and sharpness. A forecasting system should assign probabilities that agree with empirical frequencies while remaining informative. This idea foreshadows later developments by Dawid and by Gneiting and Raftery regarding calibration, sharpness, and proper scoring rules.
+
+Another major contribution is the distinction between model fit and predictive adequacy. Traditional statistical analysis often focuses on whether a model accurately represents the underlying data-generating process. The prequential perspective instead asks whether the model produces good forecasts. A model may be imperfect yet still achieve excellent predictive performance. Conversely, a model with appealing theoretical properties may perform poorly when evaluated sequentially.
+
+The paper also provides an early conceptual foundation for model comparison. Given two forecasting systems
+
+\[P^{(1)}\qquad\text{and}\qquad P^{(2)},\]
+
+their cumulative scores
+
+\[S_n^{(1)}\qquad\text{and}\qquad S_n^{(2)}\]
+
+can be compared directly. This forecasting-based evaluation avoids many difficulties associated with comparing parameter estimates or model structures.
+
+For CADRL, one of the most important insights is that probabilistic models should ultimately be evaluated through predictive distributions rather than through the quality of parameter estimates. Suppose a forecasting model produces residuals
+
+\[r_t=y_t-\hat y_t.\]
+
+The objective is not to learn residual distributions for their own sake but to improve future predictive distributions
+
+\[p(y_{t+h}\mid\mathcal F_t).\]
+
+The prequential perspective therefore provides a strong justification for evaluating CADRL using predictive metrics such as CRPS, Energy Score, interval scores, and calibration measures rather than generative metrics alone.
+
+The paper also offers a useful philosophical motivation for calibration-aware learning. Standard diffusion models are typically evaluated by how accurately they approximate a data distribution. The prequential approach suggests a different criterion: the learned residual model should be judged according to the quality of the forecasts it produces. If calibration-aware diffusion learning improves predictive reliability, then it succeeds regardless of whether the learned residual distribution perfectly matches the true distribution.
+
+Relevance to CADRL. This paper provides the philosophical and statistical foundation for evaluating uncertainty models through predictive performance rather than parameter estimation. The prequential perspective supports the use of proper scoring rules, calibration metrics, and sequential forecast evaluation as primary criteria for model assessment. Among the forecasting references, it offers the clearest justification for treating probabilistic forecasting as the central objective of the project and for viewing calibration-aware diffusion residual learning as a forecasting methodology rather than merely a generative modeling technique.
+
 \subsubsection{Gneiting, Balabdaoui, and Raftery (2007): Probabilistic Forecasts, Calibration and Sharpness}
 \href{https://sites.stat.washington.edu/raftery/Research/PDF/Gneiting2007jrssb.pdf}{Link}
+
+The paper develops one of the most influential frameworks in probabilistic forecasting by formalizing the relationship between calibration and sharpness. The central thesis is that good probabilistic forecasts should maximize sharpness subject to calibration. Calibration measures agreement between predictive distributions and realized outcomes, whereas sharpness measures the concentration of predictive distributions. Calibration is a joint property of forecasts and observations, while sharpness is a property of the forecasts alone.
+
+The paper adopts a forecasting framework in which, at each time \(t\), nature selects a true distribution
+
+\[G_t,\]
+
+the forecaster issues a predictive distribution
+
+\[F_t,\]
+
+and an observation
+
+\[x_t\sim G_t\]
+
+is realized. The ideal forecaster satisfies
+
+\[F_t=G_t\qquad\forall t.\]
+
+Forecast evaluation should therefore assess how closely the predictive distributions resemble the true data-generating distributions.
+
+A central tool is the Probability Integral Transform (PIT). Given a predictive cumulative distribution function
+
+\[F_t,\]
+
+and observation
+
+\[x_t,\]
+
+the PIT value is
+
+\[p_t=F_t(x_t).\]
+
+If the forecast is ideal and \(F_t\) is continuous, then
+
+\[p_t\sim\text{Uniform}(0,1).\]
+
+Consequently, uniformity of the PIT distribution becomes a fundamental calibration criterion. The paper demonstrates, however, that PIT uniformity alone is insufficient for identifying good forecasts. Different forecasting systems can produce nearly uniform PIT histograms while exhibiting systematic biases and inferior predictive performance.
+
+The authors distinguish three forms of calibration.
+
+The first is \emph{probabilistic calibration}. A forecasting system is probabilistically calibrated if PIT values are uniformly distributed,
+
+\[p_t=F_t(x_t)\sim U(0,1).\]
+
+This notion generalizes Dawid's calibration principle to continuous predictive distributions and remains one of the most widely used calibration diagnostics in forecasting.
+
+The second notion is \emph{marginal calibration}. Let
+
+\[F_t(y)\]
+
+denote the predictive CDF and
+
+\[G_t(y)\]
+
+the true distribution. Marginal calibration requires
+
+\[\frac1T\sum_{t=1}^{T}F_t(y)=\frac1T\sum_{t=1}^{T}G_t(y)\]
+
+for all \(y\). In practice, marginal calibration assesses whether the aggregate forecast distribution matches the aggregate empirical distribution.
+
+The third notion is \emph{exceedance calibration}. For each probability level \(p\), consider the predictive quantile
+
+\[F_t^{-1}(p).\]
+
+Exceedance calibration requires
+
+\[\frac1T\sum_{t=1}^{T}G_t(F_t^{-1}(p))=p.\]
+
+This property examines whether predicted quantiles correspond to empirical exceedance frequencies.
+
+A major contribution of the paper is demonstrating that these notions are distinct. Probabilistic calibration does not imply marginal calibration, marginal calibration does not imply probabilistic calibration, and neither property alone guarantees forecast optimality. Consequently, forecast evaluation requires multiple complementary diagnostics.
+
+The paper introduces the sharpness principle, which has become one of the foundational ideas in uncertainty quantification. Sharpness refers to the concentration of predictive distributions. Among calibrated forecasting systems, the preferred forecast is the sharpest one. Intuitively, uncertainty intervals should be as narrow as possible while remaining statistically valid.
+
+Suppose two calibrated predictive distributions satisfy
+
+\[\Var(F_1)<\Var(F_2).\]
+
+Then \(F_1\) is sharper because it concentrates probability mass more tightly. Sharpness therefore rewards informative forecasts rather than merely calibrated forecasts.
+
+The authors conjecture a sharpness principle: among calibrated forecasts, the ideal forecast is maximally sharp. Although not proven in complete generality, this principle provides a powerful conceptual framework for forecast evaluation.
+
+This sharpness-calibration tradeoff is particularly important because calibration alone is insufficient. A forecaster could produce extremely wide intervals that always contain the true outcome, thereby achieving excellent calibration while providing little useful information. Conversely, highly concentrated forecasts may be informative but systematically overconfident. Good probabilistic forecasting requires balancing both objectives simultaneously.
+
+The paper introduces several diagnostic tools. The PIT histogram evaluates probabilistic calibration. Uniform PIT histograms indicate consistency between predictive distributions and observations. U-shaped histograms indicate underdispersion, while hump-shaped histograms indicate overdispersion. Skewed PIT histograms suggest systematic bias.
+
+The paper also introduces marginal calibration plots that compare average predictive distributions against empirical distributions. These plots provide a graphical diagnostic for identifying aggregate forecasting biases.
+
+A sharpness diagram is proposed to summarize forecast concentration. Measures such as prediction interval width or predictive variance can be used to compare sharpness across competing forecasting systems.
+
+Another major contribution is the use of proper scoring rules as joint measures of calibration and sharpness. Proper scoring rules reward forecasts that are simultaneously calibrated and concentrated. The paper advocates the Continuous Ranked Probability Score (CRPS),
+
+\[\text{CRPS}(F,y)=\int(F(z)-\mathbf 1\{y\le z\})^2dz,\]
+
+as one of the most useful scoring rules for continuous variables. CRPS penalizes both miscalibration and lack of sharpness.
+
+The paper explicitly connects forecast evaluation with Dawid's prequential framework. Forecasts should be assessed solely through forecast-observation pairs
+
+\[(F_t,x_t),\]
+
+rather than through internal model characteristics. Consequently, model comparison should be based on predictive performance rather than parameter estimates or likelihood values alone.
+
+For CADRL, the paper is particularly important because it clarifies the distinction between calibration and sharpness. Calibration-aware diffusion learning seeks to improve uncertainty calibration, but improvements in calibration should not come at the expense of excessively wide predictive distributions. Therefore, forecast evaluation must include both calibration diagnostics and proper scoring rules.
+
+The paper also provides the strongest justification for using PIT histograms as a primary diagnostic. If CADRL successfully learns residual distributions,
+
+\[r_t=y_t-\hat y_t,\]
+
+then generated predictive distributions should produce PIT values that are approximately uniform. PIT analysis therefore becomes a direct diagnostic for assessing whether calibration-aware residual learning improves uncertainty quality.
+
+Perhaps the most important conceptual contribution for CADRL is the sharpness-calibration paradigm itself. The proposed framework should not simply seek calibrated predictive distributions. Instead, it should seek the sharpest predictive distributions subject to calibration. This principle provides a natural lens through which all experimental results can be interpreted.
+
+Relevance to CADRL. This paper provides the theoretical foundation for calibration evaluation in probabilistic forecasting. It formalizes probabilistic calibration through PIT uniformity, introduces marginal and exceedance calibration, establishes the sharpness-calibration paradigm, and motivates the use of proper scoring rules such as CRPS. Among all forecasting references, it supplies the most important conceptual framework for evaluating whether calibration-aware diffusion residual learning improves uncertainty quantification while preserving informative forecasts.
 
 %------------------------------------------------
 
@@ -241,8 +2098,282 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Friedman (2001): Greedy Function Approximation: A Gradient Boosting Machine}
 \href{https://projecteuclid.org/journals/annals-of-statistics/volume-29/issue-5/Greedy-function-approximation-a-gradient-boosting-machine/10.1214/aos/1013203451.full}{Link}
 
+The paper introduces Gradient Boosting Machines (GBMs) and establishes one of the most influential perspectives in modern machine learning: predictive modeling can be viewed as numerical optimization in function space. Rather than fitting parameters directly, boosting constructs a predictor through a sequence of small improvements that greedily reduce a loss function. The central insight is that boosting is equivalent to gradient descent performed over functions rather than finite-dimensional parameter vectors.
+
+The objective is to estimate a function
+
+\[F(x)\]
+
+that minimizes expected loss
+
+\[F^*=\arg\min_FE_{y,x}[L(y,F(x))].\]
+
+Common choices include squared error,
+
+\[L(y,F)=(y-F)^2,\]
+
+absolute error,
+
+\[L(y,F)=|y-F|,\]
+
+and logistic likelihood for classification.
+
+Rather than optimizing directly over a parameter vector, Friedman considers optimization in function space. The predictor is represented as an additive expansion
+
+\[F_M(x)=\sum_{m=0}^{M}f_m(x),\]
+
+where each new component improves the current approximation. The goal becomes constructing a sequence of functions that progressively reduce the empirical loss.
+
+The key connection is with steepest descent. Suppose the empirical objective is
+
+\[\mathcal L(F)=\sum_{i=1}^{N}L(y_i,F(x_i)).\]
+
+The functional gradient is
+
+\[g_m(x_i)=\left.\frac{\partial L(y_i,F(x_i))}{\partial F(x_i)}\right|_{F=F_{m-1}}.\]
+
+The steepest descent direction is therefore
+
+\[-g_m(x_i).\]
+
+Instead of taking an unrestricted gradient step, boosting approximates this negative gradient using a simple learner
+
+\[h(x;a).\]
+
+The best approximation is obtained through
+
+\[a_m=\arg\min_a\sum_{i=1}^{N}\Big(-g_m(x_i)-h(x_i;a)\Big)^2.\]
+
+Thus, each weak learner is fit to the current negative gradient rather than directly to the original response variable.
+
+The resulting Gradient Boosting algorithm is
+
+\[F_0(x)=\arg\min_\rho\sum_{i=1}^{N}L(y_i,\rho),\]
+
+and for
+
+\[m=1,\ldots,M\]
+
+compute pseudo-responses
+
+\[\tilde y_i=-\left.\frac{\partial L(y_i,F(x_i))}{\partial F(x_i)}\right|_{F=F_{m-1}},\]
+
+fit a base learner
+
+\[h_m(x)\]
+
+to
+
+\[\{\tilde y_i\},\]
+
+perform a line search
+
+\[\rho_m=\arg\min_\rho\sum_{i=1}^{N}L\Big(y_i,F_{m-1}(x_i)+\rho h_m(x_i)\Big),\]
+
+and update
+
+\[F_m(x)=F_{m-1}(x)+\rho_m h_m(x).\]
+
+This formulation is one of the most important contributions of the paper because it generalizes boosting beyond classification and beyond specific loss functions. Any differentiable loss immediately yields a boosting algorithm through its gradient.
+
+For squared-error loss,
+
+\[L(y,F)=\frac12(y-F)^2,\]
+
+the pseudo-response becomes
+
+\[\tilde y_i=y_i-F_{m-1}(x_i),\]
+
+which is simply the residual. Thus classical boosting under least-squares repeatedly fits residuals. This observation is particularly important for CADRL because residual learning forms the core of the proposed framework.
+
+In this sense, gradient boosting can be interpreted as iterative residual modeling. At iteration \(m\),
+
+\[r_i^{(m)}=y_i-F_{m-1}(x_i),\]
+
+and the next learner attempts to explain the remaining residual structure. The final model is therefore a sequential decomposition of prediction error.
+
+The paper also develops boosting algorithms for robust regression. For least absolute deviation loss,
+
+\[L(y,F)=|y-F|,\]
+
+the negative gradient becomes
+
+\[\tilde y_i=\text{sign}\big(y_i-F_{m-1}(x_i)\big).\]
+
+For Huber loss, the pseudo-responses are truncated residuals, yielding robustness against outliers. These examples demonstrate that changing the loss function changes the residuals being learned.
+
+A particularly important conceptual contribution is the distinction between prediction learning and residual learning. Traditional supervised learning fits
+
+\[y=f(x).\]
+
+Gradient boosting instead repeatedly models the residual structure left unexplained by previous predictors. This iterative residual-learning perspective later became foundational for ensemble learning and deep residual networks.
+
+The paper uses regression trees as weak learners. Each update becomes
+
+\[F_m(x)=F_{m-1}(x)+\rho_m T_m(x),\]
+
+where
+
+\[T_m(x)\]
+
+is a regression tree. The resulting model is an additive collection of residual corrections. This architecture became the basis for modern implementations such as XGBoost, LightGBM, and CatBoost.
+
+One of the paper's most influential ideas is that the choice of loss function determines the learning objective. The model architecture remains unchanged while the optimization target changes. This observation is highly relevant to CADRL because the proposed contribution is similarly based on modifying the learning objective rather than redesigning the diffusion architecture.
+
+For CADRL, the paper is particularly interesting because it provides a precedent for residual-based learning. Suppose a forecasting model produces predictions
+
+\[\hat y_t.\]
+
+Define residuals
+
+\[r_t=y_t-\hat y_t.\]
+
+Standard diffusion residual learning models
+
+\[p(r_t)\]
+
+directly. The conceptual similarity with gradient boosting is that both approaches focus on learning residual structure rather than the original signal itself.
+
+More importantly, Friedman's framework suggests a general recipe for constructing new learning algorithms:
+
+\[\text{Objective}\rightarrow\text{Gradient}\rightarrow\text{Residual Target}\rightarrow\text{Learner}.\]
+
+Another important lesson from the paper is that improvements should be evaluated according to predictive performance rather than intermediate representations. Gradient boosting succeeds because each residual update improves the final predictor. Similarly, CADRL should ultimately be judged by forecast calibration, coverage, CRPS, and energy score rather than by how accurately the diffusion model reproduces residual distributions.
+
+Relevance to CADRL. This paper provides the strongest residual-learning precedent in the literature. Its interpretation of learning as gradient descent in function space establishes a powerful conceptual framework for calibration-aware residual learning. The notion of fitting negative gradients rather than original targets offers a useful lens for viewing diffusion residual models, and the paper's emphasis on objective-driven learning directly supports the idea of modifying diffusion training through calibration-aware loss functions. Among all residual-learning references, this paper provides perhaps the clearest theoretical justification for treating residuals as first-class learning targets.
+
 \subsubsection{He et al. (2016): Deep Residual Learning for Image Recognition}
 \href{https://arxiv.org/abs/1512.03385}{Link}
+
+The paper introduces Residual Networks (ResNets) and proposes one of the most influential ideas in modern machine learning: instead of directly learning a target mapping, a neural network should learn a residual correction relative to an identity mapping. The motivation arises from the degradation problem observed in deep neural networks. As network depth increases, training error can increase despite the greater representational capacity of deeper models. This phenomenon suggests an optimization difficulty rather than a lack of expressive power.
+
+Suppose the desired mapping is
+
+\[H(x).\]
+
+Traditional neural networks attempt to learn
+
+\[H(x)\]
+
+directly. The central idea of the paper is to instead learn a residual function
+
+\[F(x)=H(x)-x.\]
+
+The original mapping is then recovered through
+
+\[H(x)=F(x)+x.\]
+
+Thus, the network learns only the correction needed relative to the identity map.
+
+The resulting residual block is
+
+\[y=F(x,\{W_i\})+x,\]
+
+where
+
+\[F(x,\{W_i\})\]
+
+denotes a stack of nonlinear layers parameterized by weights
+
+\[\{W_i\},\]
+
+and
+
+\[x\]
+
+is passed directly through a shortcut connection. The shortcut performs identity mapping and introduces neither additional parameters nor additional computational complexity.
+
+The key hypothesis is that learning residual corrections is easier than learning the full mapping itself. If the optimal solution is close to an identity transformation,
+
+\[H(x)\approx x,\]
+
+then the residual function becomes
+
+\[F(x)\approx0.\]
+
+Driving residuals toward zero is significantly easier than forcing multiple nonlinear layers to learn an exact identity mapping.
+
+One of the most important mathematical consequences appears during backpropagation. Let
+
+\[y=x+F(x).\]
+
+Differentiating yields
+
+\[\frac{\partial y}{\partial x}=I+\frac{\partial F}{\partial x}.\]
+
+Applying the chain rule,
+
+\[\frac{\partial \mathcal L}{\partial x}=\frac{\partial \mathcal L}{\partial y}\left(I+\frac{\partial F}{\partial x}\right).\]
+
+The identity term
+
+\[I\]
+
+ensures that gradients can propagate directly through the network even when
+
+\[\frac{\partial F}{\partial x}\]
+
+is small. This observation provides a partial explanation for why ResNets mitigate vanishing gradient problems and remain trainable at much greater depths.
+
+The paper demonstrates empirically that deeper plain networks often exhibit higher training error than shallower networks. Consider a shallow model and a deeper model obtained by adding additional layers. In principle, the deeper network could replicate the shallower network by setting the added layers to identity mappings. Therefore, a deeper network should never perform worse. However, optimization algorithms frequently fail to find this solution. Residual learning addresses this optimization difficulty.
+
+The standard residual block can be written as
+
+\[y=F(x,W)+x.\]
+
+When dimensions differ, a projection shortcut is introduced,
+
+\[y=F(x,W)+W_sx,\]
+
+where
+
+\[W_s\]
+
+is typically implemented using a \(1\times1\) convolution. This allows residual learning to be applied across changes in feature dimension.
+
+A major empirical result is that residual learning enables successful optimization of extremely deep networks. The paper demonstrates residual architectures with 34, 50, 101, and 152 layers, achieving state-of-the-art performance on ImageNet while avoiding the degradation observed in plain architectures.
+
+Although the paper focuses on computer vision, the residual-learning principle is far more general. The essential idea is that learning corrections is often easier than learning entire functions. This observation later influenced numerous areas including transformers, diffusion models, sequence modeling, numerical PDE solvers, and scientific machine learning.
+
+From the perspective of CADRL, the most important conceptual contribution is the residual-learning paradigm itself. Suppose a forecasting model produces predictions
+
+\[\hat y_t.\]
+
+Define residuals
+
+\[r_t=y_t-\hat y_t.\]
+
+Traditional forecasting attempts to model
+
+\[y_t\]
+
+directly. CADRL instead focuses on learning
+
+\[r_t.\]
+
+This is philosophically identical to the ResNet viewpoint. Rather than learning the entire signal, the model learns the remaining correction after a baseline predictor has already captured the dominant structure.
+
+The connection becomes even stronger when considering iterative refinement. ResNets repeatedly apply residual corrections,
+
+\[x_{k+1}=x_k+F_k(x_k).\]
+
+Similarly, residual diffusion learning can be interpreted as learning a stochastic correction process,
+
+\[y_t=\hat y_t+r_t,\]
+
+where the diffusion model generates samples from the residual distribution rather than the original signal distribution.
+
+Another important lesson is that residual learning decouples representation learning from correction learning. The baseline model captures the main predictive structure, while the residual learner focuses only on what remains unexplained. This decomposition is exactly the motivation behind CADRL. The forecasting model (VAR, RNN, TimeGrad, etc.) explains predictable dynamics, while the diffusion model focuses exclusively on innovation uncertainty.
+
+The paper also provides a useful methodological precedent. ResNets did not achieve success through a fundamentally new network architecture but through a simple reformulation of the learning problem. This is particularly relevant for CADRL because the proposed contribution is likewise a learning reformulation. The novelty lies not in inventing a new diffusion architecture but in changing what the diffusion model learns and how it is trained.
+
+Perhaps the most important insight for the thesis is that residual learning often improves optimization by simplifying the target function. If residual distributions are easier to model than the original time series distribution, then diffusion residual learning may inherit similar optimization benefits. This provides a theoretical motivation for learning innovation distributions separately rather than generating future observations directly.
+
+Relevance to CADRL. This paper provides the foundational justification for residual learning as a modeling strategy. The central idea
+
+\[H(x)=x+F(x)\]
+
+establishes a powerful principle: learning corrections is often easier than learning complete mappings. CADRL applies this philosophy to uncertainty quantification by learning residual innovation distributions rather than forecasting distributions directly. Among all residual-learning references, this paper provides the clearest conceptual justification for why residuals should be treated as first-class learning targets and why residual-based uncertainty models may be easier to optimize than end-to-end predictive distributions.
 
 %------------------------------------------------
 
@@ -251,158 +2382,804 @@ Demonstrate effectiveness across both classical and deep forecasting systems.
 \subsubsection{Masegosa (2019): Learning under Model Misspecification: Applications to Variational and Ensemble methods}
 \href{https://arxiv.org/abs/1912.08335}{Link}
 
+The paper studies one of the central challenges in probabilistic learning: model misspecification. A model is misspecified when the true data-generating process does not belong to the assumed model family. The central claim is that Bayesian model averaging is optimal only under correct specification and can become suboptimal for prediction when the model class is misspecified. The paper develops new PAC-Bayes generalization bounds and derives alternative posterior distributions that yield better predictive performance than the standard Bayesian posterior.
+
+Suppose observations
+
+\[D=\{(x_i,y_i)\}_{i=1}^{n}\]
+
+are generated from an unknown distribution
+
+\[P^*(x,y).\]
+
+A probabilistic model family is
+
+\[\mathcal M=\{p(y|x,\theta):\theta\in\Theta\}.\]
+
+Under correct specification there exists
+
+\[\theta^*\]
+
+such that
+
+\[p(y|x,\theta^*)=P^*(y|x).\]
+
+Under misspecification no such parameter exists. Instead,
+
+\[P^*\notin\mathcal M.\]
+
+This situation is the norm rather than the exception in practical machine learning.
+
+Standard Bayesian inference constructs the posterior
+
+\[p(\theta|D)=\frac{p(D|\theta)p(\theta)}{p(D)}.\]
+
+Predictions are obtained through Bayesian model averaging,
+
+\[p(y|x,D)=\int p(y|x,\theta)p(\theta|D)\,d\theta.\]
+
+A common belief is that Bayesian model averaging automatically provides optimal uncertainty quantification. The paper challenges this belief by showing that the Bayesian posterior is only one possible posterior distribution and not necessarily the one that minimizes predictive risk under misspecification.
+
+The analysis relies on PAC-Bayes theory. Let
+
+\[Q(\theta)\]
+
+denote a posterior distribution over models and
+
+\[P(\theta)\]
+
+a prior distribution. Define the expected risk
+
+\[R(Q)=E_{\theta\sim Q}[R(\theta)],\]
+
+and empirical risk
+
+\[\hat R(Q)=E_{\theta\sim Q}[\hat R(\theta)].\]
+
+PAC-Bayes theory provides generalization bounds of the form
+
+\[R(Q)\le\hat R(Q)+\sqrt{\frac{\KL(Q\|P)+C}{n}}.\]
+
+This bound reveals an explicit tradeoff between empirical fit and model complexity.
+
+A key observation is that the Bayesian posterior can be derived as the minimizer of a first-order PAC-Bayes bound. Specifically, the variational objective
+
+\[E_Q[\hat R(\theta)]+\frac1n\KL(Q\|P)\]
+
+yields
+
+\[Q_{\text{Bayes}}=p(\theta|D).\]
+
+Thus Bayesian inference can be interpreted as minimizing a particular upper bound on predictive risk.
+
+The paper argues that this first-order bound may be loose under model misspecification. Consequently, the Bayesian posterior may concentrate on models that fit the assumed likelihood well while failing to optimize predictive performance.
+
+To address this issue, the author derives second-order PAC-Bayes bounds. These bounds incorporate the variance of losses under the posterior distribution. Let
+
+\[\ell(\theta)\]
+
+denote the prediction loss. The variance term is
+
+\[\Var_Q(\ell)=E_Q[\ell^2]-E_Q[\ell]^2.\]
+
+The resulting bound includes both mean and variance contributions,
+
+\[R(Q)\lesssim\hat R(Q)+\sqrt{\frac{\KL(Q\|P)}{n}}+\frac{\Var_Q(\ell)}{n}.\]
+
+Although simplified here, the important insight is that predictive uncertainty depends not only on average performance but also on variability across models.
+
+The resulting optimal posterior differs from the Bayesian posterior. Instead of concentrating aggressively around a single best-fitting model, the new posterior may deliberately retain diversity when such diversity improves predictive performance.
+
+One of the most striking examples in the paper involves linear regression with misspecified noise. The Bayesian posterior concentrates around the best single parameter value. The alternative posterior spreads probability mass across multiple parameter values, creating a posterior predictive distribution that better reflects the true uncertainty present in the data.
+
+This observation has important implications for uncertainty quantification. A posterior distribution is not valuable merely because it represents parameter uncertainty. Its value depends on the quality of the induced predictive distribution
+
+\[p(y|x,Q)=\int p(y|x,\theta)Q(\theta)\,d\theta.\]
+
+The paper therefore shifts attention from parameter inference to predictive performance.
+
+The authors show that the resulting methods can be implemented as generalized variational inference procedures. Standard variational inference minimizes
+
+\[\KL(q(\theta)\|p(\theta|D)),\]
+
+which approximates the Bayesian posterior. The proposed methods instead optimize objectives derived from second-order PAC-Bayes bounds, yielding non-Bayesian posterior distributions with potentially better predictive behavior.
+
+Another interpretation is through ensemble learning. Rather than viewing
+
+\[Q\]
+
+as a Bayesian posterior, one can view it as an ensemble weighting distribution. The resulting predictive distribution combines multiple models in a way that directly targets predictive performance rather than Bayesian coherence.
+
+For CADRL, the paper provides one of the strongest theoretical motivations for calibration-aware learning. Standard diffusion residual learning optimizes a generative objective, analogous to Bayesian likelihood optimization. The paper demonstrates that optimizing a generative objective alone may not produce the best predictive uncertainty estimates under misspecification.
+
+This observation aligns almost perfectly with the CADRL motivation. Residual distributions learned through diffusion may accurately reproduce historical residuals while still producing poorly calibrated predictive intervals. Consequently, one may wish to optimize rather than relying on generative learning alone.
+
+The paper also provides a useful conceptual distinction between model learning and predictive learning. Bayesian inference seeks a posterior distribution consistent with the assumed model. The PAC-Bayes approach seeks a posterior distribution that improves predictive performance. CADRL similarly prioritizes predictive calibration over strict generative fidelity.
+
+Perhaps the most important lesson is that accurate density estimation does not automatically imply good uncertainty quantification. Under misspecification, the predictive distribution induced by a generative model may be systematically overconfident or underconfident. This is precisely the phenomenon that calibration-aware diffusion learning seeks to address.
+
+Relevance to CADRL. This paper provides one of the strongest theoretical justifications for moving beyond purely generative learning objectives. Its central result is that Bayesian-optimal learning need not be prediction-optimal under model misspecification. The paper therefore supports the broader CADRL philosophy that uncertainty models should be optimized for predictive performance and calibration rather than solely for likelihood or generative accuracy. Among the theoretical references reviewed thus far, this paper offers perhaps the clearest argument for why calibration-aware residual learning may outperform standard diffusion-based uncertainty modeling when the residual distribution is imperfectly specified.
+
 
 \section{Background}
 
+This chapter introduces the mathematical foundations underlying Calibration-Aware Diffusion Residual Learning (CADRL). The goal is to establish the forecasting, residual learning, generative modeling, calibration, and uncertainty quantification concepts that form the basis of the proposed framework.
+
 \subsection{Forecasting Models}
-VAR 
 
-RNN
+Let \(y_t\in\mathbb R^d\) denote a multivariate time series and let \(\mathcal F_t=\sigma(y_t,y_{t-1},\ldots)\) denote the information available at time \(t\). A forecasting model is a mapping \(f_\theta:\mathcal F_t\rightarrow\mathbb R^d\) that produces a prediction \(\hat y_{t+h|t}=f_\theta(\mathcal F_t)\). The corresponding forecast error is \(e_t(h)=y_{t+h}-\hat y_{t+h|t}\).
 
+\subsubsection*{Vector Autoregressions}
+
+A VAR(\(p\)) model is defined by \(y_t=c+A_1y_{t-1}+\cdots+A_py_{t-p}+u_t\), where \(u_t\) denotes the innovation process satisfying \(E[u_t]=0\) and \(\Var(u_t)=\Sigma_u\). The VAR is covariance-stationary if \(\det(I_d-A_1z-\cdots-A_pz^p)\neq0\) for all \(|z|\le1\).
+
+Under stationarity, the VAR admits the moving-average representation
+
+\[
+y_t=\mu+\sum_{j=0}^{\infty}\Phi_j u_{t-j},
+\]
+
+where \(\mu=(I_d-A_1-\cdots-A_p)^{-1}c\), \(\Phi_0=I_d\), and \(\Phi_j=\sum_{i=1}^{p}A_i\Phi_{j-i}\).
+
+The \(h\)-step forecast error can be written as
+
+\[
+e_t(h)=\sum_{j=0}^{h-1}\Phi_j u_{t+h-j},
+\]
+
+with covariance
+
+\[
+\Sigma_h=\Var(e_t(h))
+=\sum_{j=0}^{h-1}\Phi_j\Sigma_u\Phi_j^\top.
+\]
+
+These expressions show that forecast uncertainty is entirely determined by the innovation process, motivating innovation learning as a mechanism for improving probabilistic forecasts.
+
+\subsubsection*{Recurrent Neural Networks}
+
+An RNN evolves a hidden state according to \(h_t=g_\theta(h_{t-1},y_t)\), where \(h_t\) summarizes historical information. Predictions are generated through \(\hat y_{t+1}=Wh_t+b\). Unlike VARs, RNNs permit nonlinear temporal dynamics. Within CADRL, forecasting and uncertainty modeling are treated separately so that residual learning remains model-agnostic.
 
 \subsection{Residual Processes}
 
-Residuals as empirical innovation proxies
+Residuals are defined as \(r_t=y_t-\hat y_t\). For a well-specified forecasting model, \(r_t\approx u_t\), where \(u_t\) denotes the underlying innovation process. Residuals may therefore be interpreted as empirical innovation proxies.
+
+Let \(F_r(x)=P(r_t\le x)\) denote the residual distribution. The empirical residual distribution is \(\hat F_T(x)=\frac1T\sum_{t=1}^{T}\mathbf1(r_t\le x)\), and the corresponding empirical measure is \(\hat\mu_T=\frac1T\sum_{t=1}^{T}\delta_{r_t}\).
+
+Under standard regularity conditions, the Glivenko--Cantelli theorem implies
+
+\[
+\sup_x|\hat F_T(x)-F_r(x)|\rightarrow0,
+\]
+
+almost surely.
+
+To compare probability distributions, we use the Wasserstein distance
+
+\[
+W_p(P,Q)
+=
+\left(
+\inf_{\gamma\in\Gamma(P,Q)}
+\int
+\|x-y\|^p
+\,d\gamma(x,y)
+\right)^{1/p}.
+\]
+
+The residual learning problem can therefore be formulated as learning a distribution \(p_\theta(r)\) satisfying \(p_\theta(r)\approx F_r\), or equivalently \(W_p(p_\theta,F_r)\rightarrow0\).
 
 \subsection{Diffusion Models}
 
-DDPM
+Diffusion models are generative models that learn complex distributions through iterative denoising. In CADRL, diffusion models are trained on residual samples rather than raw observations.
 
-Score-based Models
+\subsubsection*{Denoising Diffusion Probabilistic Models}
 
-SDE Interpretation
+The forward process gradually perturbs data according to \(q(x_t|x_{t-1})=N(\sqrt{1-\beta_t}x_{t-1},\beta_tI)\). Defining \(\alpha_t=1-\beta_t\) and \(\bar\alpha_t=\prod_{s=1}^{t}\alpha_s\), the marginal distribution becomes
+
+\[
+q(x_t|x_0)
+=
+N(\sqrt{\bar\alpha_t}x_0,(1-\bar\alpha_t)I).
+\]
+
+The reverse process is parameterized by \(p_\theta(x_{t-1}|x_t)\). Training is typically performed through
+
+\[
+\mathcal L_{\text{DDPM}}
+=
+E\left[\|\epsilon-\epsilon_\theta(x_t,t)\|^2\right].
+\]
+
+This objective serves as the baseline generative objective used by CADRL.
+
+\subsubsection*{Score-Based Models}
+
+The score function is defined as \(s(x,t)=\nabla_x\log p_t(x)\). Score-based models learn an approximation \(s_\theta(x,t)\approx s(x,t)\). The Fisher divergence between two distributions is
+
+\[
+D_F(p,q)
+=
+E_p\left[\|\nabla\log p-\nabla\log q\|^2\right].
+\]
+
+Minimizing Fisher divergence yields consistency of the learned score function.
+
+\subsubsection*{SDE Interpretation}
+
+Diffusion models admit a continuous-time formulation through the stochastic differential equation \(dx=f(x,t)dt+g(t)dW_t\). The corresponding reverse-time process satisfies
+
+\[
+dx
+=
+\left[f(x,t)-g(t)^2\nabla_x\log p_t(x)\right]dt
++
+g(t)d\bar W_t.
+\]
+
+The density evolution follows the Fokker--Planck equation
+
+\[
+\frac{\partial p_t}{\partial t}
+=
+-\nabla\cdot(fp_t)
++
+\frac12 g(t)^2\Delta p_t.
+\]
+
+These relationships provide the theoretical foundation for diffusion-based residual generation.
 
 \subsection{Calibration}
-Coverage
 
-Reliability
+Calibration measures agreement between predicted uncertainty and observed frequencies.
 
-PIT  and ECE  
+A predictor is perfectly calibrated if \(P(Y=\hat Y|R=r)=r\), where \(R\) denotes a reported confidence level. Defining the reliability function \(g(r)=P(Y=\hat Y|R=r)\), perfect calibration corresponds to \(g(r)=r\).
+
+Coverage of a prediction set \(C_\alpha(X)\) is defined as \(P(Y\in C_\alpha(X))\). A calibrated prediction set satisfies \(P(Y\in C_\alpha(X))=1-\alpha\).
+
+For predictive distribution \(F_t\), the Probability Integral Transform (PIT) is defined as \(u_t=F_t(y_t)\). If \(F_t\) equals the true predictive distribution, then \(u_t\sim U(0,1)\). PIT uniformity therefore serves as a diagnostic for probabilistic calibration.
+
+Expected Calibration Error (ECE) is given by
+
+\[
+\text{ECE}
+=
+\sum_{m=1}^{M}
+\frac{|B_m|}{N}
+\left|
+\text{acc}(B_m)-\text{conf}(B_m)
+\right|.
+\]
+
+A differentiable alternative is the Maximum Mean Calibration Error (MMCE),
+
+\[
+\text{MMCE}
+=
+\left\|
+E[(c-r)\phi(r)]
+\right\|_{\mathcal H},
+\]
+
+which may serve as a candidate calibration loss within CADRL.
 
 \subsection{Proper Scoring Rules}
 
-CRPS  
+A scoring rule \(S(F,y)\) is proper if \(E_G[S(G,Y)]\le E_G[S(F,Y)]\) for all predictive distributions \(F\), and strictly proper if equality holds only when \(F=G\).
 
-Energy Score  
+The logarithmic score is defined as \(S(F,y)=-\log f(y)\) and is closely related to Kullback--Leibler divergence.
 
-Log Predictive Density
+The Continuous Ranked Probability Score (CRPS) is
+
+\[
+\text{CRPS}(F,y)
+=
+E|X-y|
+-
+\frac12E|X-X'|.
+\]
+
+For forecast samples \(\tilde y^{(1)},\ldots,\tilde y^{(M)}\), the Monte Carlo estimator is
+
+\[
+\widehat{\text{CRPS}}
+=
+\frac1M
+\sum_{m=1}^{M}
+|\tilde y^{(m)}-y|
+-
+\frac1{2M^2}
+\sum_{m=1}^{M}
+\sum_{n=1}^{M}
+|\tilde y^{(m)}-\tilde y^{(n)}|.
+\]
+
+The Energy Score is
+
+\[
+ES(F,y)
+=
+E\|X-y\|
+-
+\frac12E\|X-X'\|.
+\]
+
+Its Monte Carlo estimator is
+
+\[
+\widehat{ES}
+=
+\frac1M
+\sum_{m=1}^{M}
+\|\tilde y^{(m)}-y\|
+-
+\frac1{2M^2}
+\sum_{m,n}
+\|\tilde y^{(m)}-\tilde y^{(n)}\|.
+\]
 
 \subsection{Uncertainty Quantification}
 
-Predictive distributions
+The objective of probabilistic forecasting is to estimate the predictive distribution \(p(y_{t+h}|\mathcal F_t)\) rather than only a point forecast.
 
-Forecast trajectories
+Predictive distributions can be approximated through forecast trajectories \(\tilde y^{(1)},\ldots,\tilde y^{(M)}\). Within CADRL, these trajectories are generated by sampling residuals \(\tilde r^{(1)},\ldots,\tilde r^{(M)}\) from the learned diffusion model and propagating them through the forecasting system.
 
-probabilistic forecasting
+The predictive mean is \(\hat y=\frac1M\sum_{m=1}^{M}\tilde y^{(m)}\), while the predictive covariance is
 
-\part{Calibration Aware Diffusion Residual Learning}
-
-\section{Problem Formulation}
-
-\subsection{Forecasting System}
-
-Given:
-
-$\hat y_t = f(y_{1:t-1})$
-
-compute residuals:
-$
-r_t
+\[
+\hat\Sigma
 =
-y_t-\hat y_t
-$
-and learn:
-$
-p(r)
-$
-using diffusion models.
+\frac1M
+\sum_{m=1}^{M}
+(\tilde y^{(m)}-\hat y)
+(\tilde y^{(m)}-\hat y)^\top.
+\]
 
-\subsection{Standard Residual Learning}
+Prediction intervals are constructed from predictive quantiles \([l_\alpha,u_\alpha]\) and evaluated through calibration, coverage, and proper scoring rules.
 
-Current diffusion models optimize:
-$
-\mathcal L_{\text{diffusion}}
-$
-through score matching or denoising.
+The central objective of CADRL is to learn residual distributions that are both realistic and calibrated through
 
-Calibration is evaluated only after training.
-
-
-\subsection{Proposed Framework}
-
-Calibration becomes part of the optimization objective:
-$
-\mathcal L
+\[
+\mathcal L_{\text{CADRL}}
 =
 \mathcal L_{\text{diffusion}}
 +
 \lambda
-\mathcal L_{\text{calibration}}
-$
+\mathcal L_{\text{calibration}}.
+\]
+
+This objective combines generative fidelity with uncertainty quality and represents the first realization of the broader Calibration-Aware Residual Learning (CARL) paradigm.
+
+\part{CADRL: A First Step for Calibration in Training}
+\section{Problem Formulation}
+
+\subsection{Forecasting System}
+
+Let
+
+\[
+y_t\in\mathbb R^d
+\]
+
+denote an observed time series and let
+
+\[
+\mathcal F_t
+=
+\sigma(y_t,y_{t-1},\ldots)
+\]
+
+denote the information available at time \(t\).
+
+A forecasting model is defined as
+
+\[
+\hat y_t=f_\theta(\mathcal F_{t-1}),
+\]
+
+where \(f_\theta\) may be a classical forecasting model such as a VAR or a deep forecasting model such as an RNN.
+
+The corresponding residuals are
+
+\[
+r_t=y_t-\hat y_t.
+\]
+
+Under standard forecasting assumptions, residuals act as empirical realizations of an underlying innovation process. Let
+
+\[
+F_r
+\]
+
+denote the residual distribution, with cumulative distribution function
+
+\[
+F_r(x)=P(r_t\le x).
+\]
+
+The objective of residual learning is to estimate a flexible approximation
+
+\[
+p_\phi(r)\approx F_r.
+\]
+
+Once a residual model has been learned, samples
+
+\[
+\tilde r^{(1)},\ldots,\tilde r^{(M)}
+\]
+
+can be generated and combined with the baseline forecast to produce predictive trajectories
+
+\[
+\tilde y^{(m)}
+=
+\hat y+\tilde r^{(m)}.
+\]
+
+The collection of trajectories induces an empirical predictive distribution
+
+\[
+\hat p(y_{t+h}|\mathcal F_t).
+\]
+
+Within this framework, the forecasting model determines the conditional mean structure while the residual model determines the uncertainty structure. Consequently, the quality of uncertainty quantification depends critically on how accurately the residual distribution is learned.
+
+\subsection{Standard Residual Learning}
+
+Recent advances in diffusion and score-based generative modeling provide flexible approaches for learning complex residual distributions. Given residual observations
+
+\[
+r_1,\ldots,r_T,
+\]
+
+a diffusion model is trained to approximate
+
+\[
+p_\phi(r)\approx F_r.
+\]
+
+For DDPMs, training is performed through a denoising objective
+
+\[
+\mathcal L_{\text{diffusion}}
+=
+E
+\left[
+\|
+\epsilon-\epsilon_\phi(x_t,t)
+\|^2
+\right],
+\]
+
+where \(x_t\) denotes a noisy residual sample and \(\epsilon\) denotes Gaussian noise.
+
+Similarly, score-based models learn the score function
+
+\[
+s_\phi(x,t)
+\approx
+\nabla_x\log p_t(x)
+\]
+
+through score matching objectives.
+
+The resulting optimization procedure focuses entirely on distributional fidelity. Specifically, the learned residual distribution is encouraged to reproduce the observed residual distribution according to a statistical divergence such as KL divergence, Fisher divergence, or Wasserstein distance.
+
+After training, residual samples are generated from the learned model and used to construct predictive distributions. Calibration diagnostics such as coverage, PIT histograms, reliability diagrams, and Expected Calibration Error (ECE) are then evaluated on the resulting forecasts.
+
+Importantly, calibration information does not influence the learning process itself. The training objective depends only on generative accuracy, while calibration is treated purely as a post-training evaluation criterion. As a result, a residual model may achieve excellent generative performance while still producing predictive distributions that are systematically overconfident, underconfident, or otherwise miscalibrated.
+
+\subsection{Proposed Framework}
+
+Calibration-Aware Diffusion Residual Learning modifies standard diffusion residual modeling by allowing calibration feedback to influence the learned residual distribution. Standard diffusion residual learning optimizes a generative objective \(\mathcal L_{\text{diffusion}}\), which encourages the model to reproduce the empirical residual distribution. CADRL instead optimizes
+\[
+\mathcal L_{\text{CADRL}}
+=
+\mathcal L_{\text{diffusion}}
++
+\lambda
+\mathcal L_{\text{calibration}},
+\]
+where \(\lambda\ge0\) controls the trade-off between generative fidelity and calibration quality.
+
+Let \(r_t=y_t-\hat y_t\) denote residuals extracted from a forecasting model and let \(p_\phi(r)\) denote the residual distribution learned by a diffusion model with parameters \(\phi\). Standard diffusion training seeks \(p_\phi(r)\approx F_r\), where \(F_r\) is the empirical residual distribution. CADRL instead seeks a residual generator whose induced predictive distribution \(\hat F_t\) is calibrated with respect to future observations. Thus, the target is not merely distributional realism of residuals, but reliable predictive uncertainty after residual samples are propagated through the forecasting system.
+
+Given residual samples \(\tilde r_t^{(1)},\ldots,\tilde r_t^{(M)}\sim p_\phi(r)\), predictive samples are constructed as \(\tilde y_t^{(m)}=\hat y_t+\tilde r_t^{(m)}\). These samples induce an empirical predictive distribution \(\hat F_t\). Calibration losses are then computed using the relationship between \(\hat F_t\) and the observed \(y_t\). In this way, CADRL creates a feedback loop:
+\[
+\text{residual samples}
+\rightarrow
+\text{predictive distribution}
+\rightarrow
+\text{calibration loss}
+\rightarrow
+\text{diffusion update}.
+\]
+
+The central methodological distinction is that calibration is no longer a post-training diagnostic. Instead, calibration becomes part of the optimization problem used to learn the residual distribution itself.
 
 \section{Calibration Objectives}
 
 \subsection{Coverage Loss}
 
-Penalize deviations from nominal coverage:
-
-$\mathcal L_{\text{coverage}}
+For a nominal \((1-\alpha)\)-level prediction interval \(C_{\alpha,t}=[\hat q_{\alpha/2,t},\hat q_{1-\alpha/2,t}]\), empirical coverage is
+\[
+\hat C_\alpha
 =
-(\hat C-(1-\alpha))^2
-$
+\frac1N
+\sum_{t=1}^{N}
+\ind\{y_t\in C_{\alpha,t}\}.
+\]
+A basic coverage loss penalizes deviation from nominal coverage:
+\[
+\mathcal L_{\text{coverage}}
+=
+(\hat C_\alpha-(1-\alpha))^2.
+\]
+
+This objective directly targets interval validity. If \(\mathcal L_{\text{coverage}}\rightarrow0\), then \(\hat C_\alpha\rightarrow1-\alpha\), meaning the empirical coverage approaches the nominal level. This is useful for coverage guarantees, but the hard indicator \(\ind\{y_t\in C_{\alpha,t}\}\) is not differentiable. For gradient-based training, a smooth approximation can be used. Define soft interval membership by
+\[
+s_t
+=
+\sigmoid\left(\frac{y_t-\hat q_{\alpha/2,t}}{\tau}\right)
+\sigmoid\left(\frac{\hat q_{1-\alpha/2,t}-y_t}{\tau}\right),
+\]
+where \(\tau>0\) controls smoothness. Then a differentiable coverage estimate is \(\tilde C_\alpha=\frac1N\sum_{t=1}^{N}s_t\), and the trainable loss becomes
+\[
+\mathcal L_{\text{soft-cov}}
+=
+(\tilde C_\alpha-(1-\alpha))^2.
+\]
+
+As \(\tau\rightarrow0\), the soft membership \(s_t\) approaches the hard indicator \(\ind\{y_t\in C_{\alpha,t}\}\). Thus, the soft coverage loss provides a differentiable surrogate for empirical coverage.
 
 \subsection{PIT-Based Calibration Loss}
 
-Encourage:
-$
-u_i
-=
-F_i(y_i)
-$
-to approach Uniform(0,1).
+For a predictive CDF \(\hat F_t\), the Probability Integral Transform is \(u_t=\hat F_t(y_t)\). If \(\hat F_t\) equals the true predictive distribution, then \(u_t\sim U(0,1)\). Therefore, calibration can be encouraged by penalizing deviations of the empirical PIT distribution from the uniform distribution.
 
+Given predictive samples \(\tilde y_t^{(1)},\ldots,\tilde y_t^{(M)}\), an empirical PIT value is
+\[
+\hat u_t
+=
+\frac1M
+\sum_{m=1}^{M}
+\ind\{\tilde y_t^{(m)}\le y_t\}.
+\]
+A differentiable approximation replaces the indicator with a sigmoid:
+\[
+\tilde u_t
+=
+\frac1M
+\sum_{m=1}^{M}
+\sigmoid\left(\frac{y_t-\tilde y_t^{(m)}}{\tau}\right).
+\]
+
+One simple PIT loss penalizes deviations between the empirical PIT moments and the moments of \(U(0,1)\):
+\[
+\mathcal L_{\text{PIT-mom}}
+=
+\left(\frac1N\sum_{t=1}^{N}\tilde u_t-\frac12\right)^2
++
+\left(\frac1N\sum_{t=1}^{N}\tilde u_t^2-\frac13\right)^2.
+\]
+This matches the first two moments of the PIT distribution. A stronger version uses a Cramér--von Mises loss:
+\[
+\mathcal L_{\text{PIT-CvM}}
+=
+\frac1N
+\sum_{t=1}^{N}
+\left(
+\hat G_N(\tilde u_t)-\tilde u_t
+\right)^2,
+\]
+where \(\hat G_N\) is the empirical CDF of the PIT values. In implementation, \(\hat G_N\) may be approximated using differentiable sorting or smooth kernel CDF estimates.
+
+The proof intuition is straightforward: if \(\hat F_t=G_t\), where \(G_t\) is the true predictive distribution, then \(G_t(y_t)\sim U(0,1)\). Therefore, minimizing a distance between the PIT distribution and \(U(0,1)\) encourages predictive calibration.
 
 \subsection{ECE-Based Loss}
 
-Penalize confidence-frequency mismatch.
+Expected Calibration Error measures the discrepancy between predicted confidence and observed empirical frequency. For classification, ECE is usually defined using confidence bins. In forecasting, an analogous construction can be based on predictive interval levels. Let \(\mathcal A=\{\alpha_1,\ldots,\alpha_K\}\) denote a collection of nominal miscoverage levels. For each \(\alpha_k\), construct prediction interval \(C_{\alpha_k,t}\) with nominal coverage \(1-\alpha_k\). The empirical coverage is
+\[
+\hat C_{\alpha_k}
+=
+\frac1N
+\sum_{t=1}^{N}
+\ind\{y_t\in C_{\alpha_k,t}\}.
+\]
+A forecasting ECE can be defined as
+\[
+\mathcal L_{\text{ECE}}
+=
+\sum_{k=1}^{K}
+w_k
+\left|
+\hat C_{\alpha_k}-(1-\alpha_k)
+\right|,
+\]
+where \(w_k\ge0\) and \(\sum_k w_k=1\).
+
+For differentiable training, replace hard coverage with soft coverage:
+\[
+\tilde C_{\alpha_k}
+=
+\frac1N
+\sum_{t=1}^{N}
+\sigmoid\left(\frac{y_t-\hat q_{\alpha_k/2,t}}{\tau}\right)
+\sigmoid\left(\frac{\hat q_{1-\alpha_k/2,t}-y_t}{\tau}\right).
+\]
+The differentiable ECE-style loss is then
+\[
+\mathcal L_{\text{soft-ECE}}
+=
+\sum_{k=1}^{K}
+w_k
+\left|
+\tilde C_{\alpha_k}-(1-\alpha_k)
+\right|.
+\]
+
+A squared version is often smoother:
+\[
+\mathcal L_{\text{soft-ECE}^2}
+=
+\sum_{k=1}^{K}
+w_k
+\left(
+\tilde C_{\alpha_k}-(1-\alpha_k)
+\right)^2.
+\]
+
+This loss encourages calibration across multiple interval levels rather than only one nominal coverage level. The proof intuition is that if \(\tilde C_{\alpha_k}\rightarrow1-\alpha_k\) for a dense grid of \(\alpha_k\), then the predictive distribution becomes calibrated across quantile levels, not merely at a single interval threshold.
 
 \subsection{CRPS-Based Loss}
 
-Use proper scoring rules as calibration objectives.
+Proper scoring rules provide another way to encourage calibrated predictive distributions. The Continuous Ranked Probability Score is
+\[
+\text{CRPS}(F,y)
+=
+E_F|X-y|
+-
+\frac12E_F|X-X'|.
+\]
+Given predictive samples \(\tilde y_t^{(1)},\ldots,\tilde y_t^{(M)}\), the Monte Carlo estimator is
+\[
+\widehat{\text{CRPS}}_t
+=
+\frac1M
+\sum_{m=1}^{M}
+|\tilde y_t^{(m)}-y_t|
+-
+\frac1{2M^2}
+\sum_{m=1}^{M}
+\sum_{n=1}^{M}
+|\tilde y_t^{(m)}-\tilde y_t^{(n)}|.
+\]
+The CRPS-based calibration loss is
+\[
+\mathcal L_{\text{CRPS}}
+=
+\frac1N
+\sum_{t=1}^{N}
+\widehat{\text{CRPS}}_t.
+\]
 
+CRPS is a strictly proper scoring rule, so its expected value is minimized by the true predictive distribution. This makes it attractive as a calibration-aware objective because it jointly rewards calibration and sharpness. Unlike pure coverage losses, CRPS discourages excessively wide predictive distributions.
 
+For multivariate forecasts, the analogous objective is the Energy Score:
+\[
+\widehat{ES}_t
+=
+\frac1M
+\sum_{m=1}^{M}
+\|\tilde y_t^{(m)}-y_t\|
+-
+\frac1{2M^2}
+\sum_{m=1}^{M}
+\sum_{n=1}^{M}
+\|\tilde y_t^{(m)}-\tilde y_t^{(n)}\|.
+\]
+The multivariate scoring-rule loss is \(\mathcal L_{\text{ES}}=\frac1N\sum_{t=1}^{N}\widehat{ES}_t\).
+
+The proof sketch follows from propriety. If \(G\) is the true predictive distribution, then for a strictly proper score \(S\), \(E_G[S(G,Y)]\le E_G[S(F,Y)]\), with equality only when \(F=G\). Therefore, minimizing CRPS or Energy Score encourages the learned predictive distribution to approach the true predictive law.
 
 \subsection{Combined Objective}
 
-Investigate:
-$
-\mathcal L
+CADRL investigates objectives of the form
+\[
+\mathcal L_{\text{CADRL}}
+=
+\mathcal L_{\text{diffusion}}
++
+\lambda
+\mathcal L_{\text{calibration}}.
+\]
+Different choices of \(\mathcal L_{\text{calibration}}\) target different notions of uncertainty quality. Coverage loss targets nominal interval validity. PIT loss targets distributional calibration. ECE-style loss targets calibration across multiple probability levels. CRPS and Energy Score target proper probabilistic forecast quality.
+
+In experiments, the main candidate objectives are:
+\[
+\mathcal L_{\text{CADRL-cov}}
+=
+\mathcal L_{\text{diffusion}}
++
+\lambda
+\mathcal L_{\text{soft-cov}},
+\]
+\[
+\mathcal L_{\text{CADRL-PIT}}
+=
+\mathcal L_{\text{diffusion}}
++
+\lambda
+\mathcal L_{\text{PIT}},
+\]
+\[
+\mathcal L_{\text{CADRL-ECE}}
+=
+\mathcal L_{\text{diffusion}}
++
+\lambda
+\mathcal L_{\text{soft-ECE}},
+\]
+and
+\[
+\mathcal L_{\text{CADRL-CRPS}}
+=
+\mathcal L_{\text{diffusion}}
++
+\lambda
+\mathcal L_{\text{CRPS}}.
+\]
+
+The parameter \(\lambda\) controls the trade-off between matching the empirical residual distribution and improving predictive calibration. When \(\lambda=0\), CADRL reduces to standard diffusion residual learning. As \(\lambda\) increases, calibration feedback exerts stronger influence on the learned residual distribution.
+
+\section{CADRL Training Procedure}
+
+The CADRL training procedure has two stages. First, a forecasting model is fit and residuals are extracted. Second, a diffusion residual model is trained using both a denoising objective and a calibration-aware objective.
+
+\begin{algorithm}[H]
+\caption{Calibration-Aware Diffusion Residual Learning}
+\KwIn{Observed time series \(\{y_t\}_{t=1}^{T}\), forecasting model \(f_\theta\), diffusion model \(\epsilon_\phi\), calibration weight \(\lambda\), number of predictive samples \(M\), nominal levels \(\mathcal A\), learning rate \(\eta\)}
+\KwOut{Calibration-aware residual generator \(p_\phi(r)\)}
+
+Fit the forecasting model \(f_\theta\) on the training data\;
+Compute forecasts \(\hat y_t=f_\theta(\mathcal F_{t-1})\)\;
+Extract residuals \(r_t=y_t-\hat y_t\)\;
+Initialize diffusion parameters \(\phi\)\;
+
+\For{each training iteration}{
+Sample a minibatch of residuals \(\{r_i\}_{i=1}^{B}\)\;
+Sample diffusion times \(s_i\sim \text{Unif}\{1,\ldots,S\}\)\;
+Sample noise \(\epsilon_i\sim N(0,I)\)\;
+Construct noisy residuals \(x_{s_i}=\sqrt{\bar\alpha_{s_i}}r_i+\sqrt{1-\bar\alpha_{s_i}}\epsilon_i\)\;
+Compute diffusion loss
+\[
+\mathcal L_{\text{diffusion}}
+=
+\frac1B
+\sum_{i=1}^{B}
+\|\epsilon_i-\epsilon_\phi(x_{s_i},s_i)\|^2
+\]
+Generate \(M\) residual samples \(\tilde r_i^{(1)},\ldots,\tilde r_i^{(M)}\) from the current reverse diffusion model\;
+Construct predictive samples \(\tilde y_i^{(m)}=\hat y_i+\tilde r_i^{(m)}\)\;
+Estimate predictive distributions \(\hat F_i\) from \(\{\tilde y_i^{(m)}\}_{m=1}^{M}\)\;
+Compute calibration loss \(\mathcal L_{\text{calibration}}\) using coverage, PIT, ECE, CRPS, or Energy Score\;
+Compute total loss
+\[
+\mathcal L_{\text{CADRL}}
 =
 \mathcal L_{\text{diffusion}}
 +
 \lambda
 \mathcal L_{\text{calibration}}
-$
-for different calibration choices.
+\]
+Update diffusion parameters \(\phi\leftarrow\phi-\eta\nabla_\phi\mathcal L_{\text{CADRL}}\)\;
+}
+\Return{\(p_\phi(r)\)}
+\end{algorithm}
 
+A practical implementation may begin with standard diffusion pretraining using \(\mathcal L_{\text{diffusion}}\) alone. After the residual generator produces stable samples, calibration-aware fine-tuning can be performed using \(\mathcal L_{\text{CADRL}}\). This two-stage procedure improves optimization stability because calibration losses depend on generated predictive samples and may be noisy early in training.
 
-\section{CADRL Training Procedure}
-
-Step 1: Fit forecasting model.
-
-Step 2: Extract residuals.
-
-Step 3: Train diffusion residual model.
-
-Step 4: Generate predictive residual samples.
-
-Step 5: Compute predictive distributions.
-
-Step 6: Evaluate calibration.
-
-Step 7: Backpropagate calibration loss.
-
-Step 8: Update diffusion model.
+In implementation, the calibration loss is computed on a validation or calibration minibatch rather than the same minibatch used for denoising. This prevents the residual generator from overfitting calibration to the training residuals. The resulting procedure resembles a feedback-driven uncertainty learning loop: diffusion learning proposes residual samples, predictive distributions are evaluated for calibration, and calibration error is backpropagated into the residual generator.
 
 \part{Forecasting Testbed}
 
@@ -410,113 +3187,84 @@ Step 8: Update diffusion model.
 
 \subsection{Classical Benchmark}
 
-VAR
+The classical benchmark is a VAR(\(p\)) model, \(y_t=c+A_1y_{t-1}+\cdots+A_py_{t-p}+u_t\), where \(y_t\in\mathbb R^d\) and \(u_t\) denotes the innovation process. The VAR is included because it is interpretable, statistically well-understood, and provides a clean setting in which forecast uncertainty is explicitly driven by innovations.
 
-Motivation: interpretable, linear, statistical baseline
+For each simulated dataset, the VAR lag order \(p\) will either be fixed across experiments or selected using an information criterion such as AIC or BIC. The fitted model produces one-step-ahead forecasts \(\hat y_t=f_{\hat\theta}(\mathcal F_{t-1})\), and residuals are extracted as \(r_t=y_t-\hat y_t\). These residuals serve as empirical innovation proxies for the residual learning stage.
 
+The VAR benchmark allows the project to test whether calibration-aware diffusion residual learning improves uncertainty quantification when the forecasting dynamics are linear and relatively transparent.
 
 \subsection{Deep Benchmark}
 
-RNN / DeepAR
+The deep benchmark is an RNN or DeepAR-style recurrent forecasting model. The model evolves a hidden state \(h_t=g_\theta(h_{t-1},y_t,x_t)\), where \(x_t\) may include optional covariates, and produces forecasts through \(\hat y_{t+1}=q_\theta(h_t)\). Unlike the VAR, the recurrent model can capture nonlinear temporal dependence and more flexible dynamic structure.
 
-Motivation: nonlinear forecasting, representation learning, modern forecasting baseline
+The RNN benchmark is included to test whether CADRL remains useful when the base forecasting model is more expressive. After training, residuals are again computed as \(r_t=y_t-\hat y_t\). The same residual models are then fitted to the RNN residuals.
 
-
-Evaluate whether calibration-aware residual learning is effective across fundamentally different forecasting architectures.
+Together, the VAR and RNN test whether calibration-aware residual learning is effective across fundamentally different forecasting architectures: a linear statistical model and a nonlinear neural forecasting model.
 
 \part{Numerical Experiments}
 
 \section{Controlled Innovation Misspecification}
 
-Determine when calibration-aware diffusion learning improves uncertainty quantification.
+The controlled simulation study is designed to determine when calibration-aware diffusion residual learning improves uncertainty quantification. Each experiment uses the same underlying forecasting structure but changes the innovation distribution. This isolates the role of innovation misspecification.
 
+A general data-generating process is specified as \(y_t=c+A_1y_{t-1}+\cdots+A_py_{t-p}+u_t\), where the coefficient matrices are chosen so that the process is stable. Across experiments, the innovation process \(u_t\) changes while the autoregressive dynamics remain fixed. This design ensures that differences in calibration and forecast quality are attributable primarily to the innovation distribution.
 
-DGP 1: Gaussian Innovations
-$
-u_t \sim N(0,\Sigma)
-$
-Baseline.
+\subsection*{DGP 1: Gaussian Innovations}
 
+The baseline setting uses \(u_t\sim N(0,\Sigma)\). This case represents the classical correctly specified setting for Gaussian VAR forecasting. The purpose is to verify that flexible residual learning does not substantially degrade performance when the Gaussian assumption is already correct.
 
-DGP 2: Moderate Heavy Tails
-$
-u_t \sim t_5
-$
+\subsection*{DGP 2: Moderate Heavy Tails}
 
+The moderate heavy-tail setting uses \(u_t\sim t_5(0,\Sigma)\). This introduces tail risk while preserving a relatively stable innovation distribution. The purpose is to test whether CADRL improves interval coverage and tail calibration when Gaussian residual assumptions are mildly violated.
 
-DGP 3: Extreme Heavy Tails
-$
-u_t \sim t_3
-$
+\subsection*{DGP 3: Extreme Heavy Tails}
 
+The extreme heavy-tail setting uses \(u_t\sim t_3(0,\Sigma)\). This case produces more frequent extreme shocks and is intended to stress-test uncertainty estimates. The main question is whether calibration-aware diffusion residual learning can reduce undercoverage in the tails without producing excessively wide intervals.
 
-DGP 4: Mixture Innovations
-$
-u_t
-\sim
-0.8N(0,1)
-+
-0.2N(0,9)
-$
+\subsection*{DGP 4: Mixture Innovations}
 
+The mixture setting uses \(u_t\sim0.8N(0,\Sigma)+0.2N(0,9\Sigma)\). This creates a residual distribution with occasional high-variance shocks. The purpose is to test whether flexible residual models can capture mixture-like uncertainty better than Gaussian or Student-\(t\) baselines.
 
-DGP 5: Heteroskedastic Innovations
-$
-u_t
-\sim
-N(0,\sigma_t^2)
-$
+\subsection*{DGP 5: Heteroskedastic Innovations}
 
+The heteroskedastic setting uses \(u_t\sim N(0,\sigma_t^2\Sigma)\), where \(\sigma_t^2\) varies over time. A simple implementation is \(\sigma_t^2=\omega+\alpha u_{t-1}^\top u_{t-1}\), or alternatively a deterministic volatility regime process. This DGP tests whether CADRL can improve calibration when uncertainty changes over time.
 
-Experimental Comparisons
+\subsection*{Experimental Comparisons}
 
-Forecast Models: VAR, RNN
+Each DGP will be evaluated using two forecasting models: VAR and RNN. For each forecasting model, residuals are extracted and modeled using five residual models: Gaussian, Student-\(t\), bootstrap, standard diffusion, and calibration-aware diffusion.
 
-Residual Models: Gaussian, Student-t, Bootstrap, Standard Diffusion, Calibration-Aware Diffusion
+The Gaussian residual model estimates \(r_t\sim N(0,\hat\Sigma_r)\). The Student-\(t\) residual model estimates \(r_t\sim t_\nu(0,\hat\Sigma_r)\). The bootstrap model samples residuals directly from the empirical residual distribution. The standard diffusion model optimizes \(\mathcal L=\mathcal L_{\text{diffusion}}\). The proposed calibration-aware diffusion model optimizes \(\mathcal L=\mathcal L_{\text{diffusion}}+\lambda\mathcal L_{\text{calibration}}\).
 
-Training Schemes
-
-Standard
-$
-\mathcal L
-=
-\mathcal L_{\text{diffusion}}
-$
-Proposed
-$
-\mathcal L
-=
-\mathcal L_{\text{diffusion}}
-+
-\lambda
-\mathcal L_{\text{calibration}}
-$
-
+For each fitted residual model, Monte Carlo residual samples \(\tilde r^{(1)},\ldots,\tilde r^{(M)}\) are generated and propagated through the forecasting model to produce predictive trajectories \(\tilde y^{(1)},\ldots,\tilde y^{(M)}\). These trajectories define the predictive distribution used for evaluation.
 
 \part{Evaluation}
 
 \section{Calibration Evaluation}
 
-Coverage: Empirical Coverage, Coverage Error
+The primary calibration metric is empirical coverage. For a nominal \((1-\alpha)\)-level interval \(C_{\alpha,t}\), empirical coverage is \(\hat C_\alpha=N^{-1}\sum_{t=1}^{N}\ind\{y_t\in C_{\alpha,t}\}\). Coverage error is \(|\hat C_\alpha-(1-\alpha)|\). Intervals will be evaluated at multiple nominal levels, such as \(50\%\), \(80\%\), \(90\%\), and \(95\%\).
 
-Reliability: ECE, Reliability Diagrams, PIT Histograms
+Reliability will be evaluated using ECE-style interval calibration, reliability diagrams, and PIT histograms. For PIT analysis, \(u_t=\hat F_t(y_t)\), where \(\hat F_t\) is the predictive CDF induced by Monte Carlo trajectories. A well-calibrated predictive distribution should produce approximately uniform PIT values.
 
-Probabilistic Forecast Quality: CRPS, Energy Score, Log Predictive Density
+Probabilistic forecast quality will be evaluated using CRPS for univariate targets and Energy Score for multivariate forecasts. Log predictive density will be reported when a density estimate is available or can be approximated. These metrics assess whether calibration improvements come at the cost of degraded probabilistic forecast quality.
 
-Sharpness: Average Interval Width, Sharpness Score
+Sharpness will be evaluated using average interval width and predictive dispersion. A useful model should improve or preserve calibration without simply making intervals excessively wide.
 
 \section{Robustness Analysis}
 
-Distributional Perturbations
+Robustness analysis investigates how predictive uncertainty degrades under controlled perturbations. The purpose is to determine whether calibration-aware diffusion residual learning produces uncertainty estimates that remain reliable under distributional stress.
 
-Investigate: variance inflation, tail amplification, mixture contamination, regime shifts
+Variance inflation will be tested by replacing residual samples \(\tilde r\) with \(a\tilde r\), where \(a>1\). Tail amplification will be tested by increasing the frequency or magnitude of extreme residual samples. Mixture contamination will be tested by injecting samples from a high-variance component. Regime shifts will be tested by changing the innovation covariance or tail behavior between training and testing.
 
-Metrics, calibration degradation, coverage degradation, sharpness degradation
+Robustness will be measured using calibration degradation, coverage degradation, and sharpness degradation. For example, coverage degradation can be defined as \(\Delta_{\text{cov}}=|\hat C_{\alpha,\text{stress}}-(1-\alpha)|-|\hat C_{\alpha,\text{base}}-(1-\alpha)|\). Similar degradation metrics will be computed for ECE, CRPS, Energy Score, and average interval width.
 
 \part{Real Data Case Study}
 
 \section{Empirical Application}
 
-Candidate Domain: Financial returns
+The empirical case study will apply CADRL to financial returns. Financial return data are appropriate because they frequently exhibit heavy tails, volatility clustering, non-Gaussian residuals, and regime changes. These properties make the domain a natural testbed for innovation misspecification.
+
+The workflow mirrors the simulation study. First, VAR and RNN forecasting models are fitted to a multivariate return series. Second, residuals are extracted from each model. Third, Gaussian, Student-\(t\), bootstrap, standard diffusion, and calibration-aware diffusion residual models are fitted. Fourth, predictive trajectories are generated and evaluated using coverage, ECE, PIT histograms, CRPS, Energy Score, log predictive density, and interval width.
+
+The objective of the case study is not to claim domain-specific superiority, but to determine whether the calibration improvements observed in controlled simulations persist in a realistic setting with non-Gaussian and time-varying uncertainty.
 
 \end{document}
