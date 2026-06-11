@@ -3,7 +3,7 @@ import torch
 
 
 @torch.no_grad()
-def deepar_predict_distribution(
+def rnn_predict_distribution(
     model,
     context: np.ndarray,
     device: str | torch.device = "cpu",
@@ -39,14 +39,14 @@ def deepar_predict_distribution(
     )
 
 
-def sample_deepar_forecast_paths(
+def sample_rnn_forecast_paths(
     mean: np.ndarray,
     scale: np.ndarray,
     n_paths: int,
     seed: int | None = None,
 ) -> np.ndarray:
     """
-    Sample forecast paths from DeepAR Gaussian predictive output.
+    Sample forecast paths from Gaussian predictive output.
 
     Returns
     -------
@@ -64,20 +64,23 @@ def sample_deepar_forecast_paths(
     return paths
 
 
-def forecast_deepar_paths(
+def forecast_rnn_paths(
     model,
     context: np.ndarray,
     n_paths: int = 1000,
     device: str | torch.device = "cpu",
     seed: int | None = None,
 ) -> dict:
-    mean, scale = deepar_predict_distribution(
+    """
+    Generate probabilistic forecast paths from a trained RNN model.
+    """
+    mean, scale = rnn_predict_distribution(
         model=model,
         context=context,
         device=device,
     )
 
-    paths = sample_deepar_forecast_paths(
+    paths = sample_rnn_forecast_paths(
         mean=mean,
         scale=scale,
         n_paths=n_paths,
@@ -87,5 +90,12 @@ def forecast_deepar_paths(
     return {
         "mean": mean,
         "scale": scale,
-        "paths": paths,
+        "forecast_paths": paths,
+        "paths": paths,  # backward-compatible alias
     }
+
+
+# Backward-compatible aliases
+deepar_predict_distribution = rnn_predict_distribution
+sample_deepar_forecast_paths = sample_rnn_forecast_paths
+forecast_deepar_paths = forecast_rnn_paths

@@ -50,7 +50,7 @@ class WindowedTimeSeriesDataset(Dataset):
         )
 
 
-def make_deepar_dataloader(
+def make_rnn_dataloader(
     y: np.ndarray,
     context_length: int,
     prediction_length: int,
@@ -65,6 +65,23 @@ def make_deepar_dataloader(
 
     return DataLoader(
         dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+    )
+
+
+# Backward-compatible alias
+def make_deepar_dataloader(
+    y: np.ndarray,
+    context_length: int,
+    prediction_length: int,
+    batch_size: int = 32,
+    shuffle: bool = True,
+) -> DataLoader:
+    return make_rnn_dataloader(
+        y=y,
+        context_length=context_length,
+        prediction_length=prediction_length,
         batch_size=batch_size,
         shuffle=shuffle,
     )

@@ -3,12 +3,12 @@ from torch import nn
 import torch.nn.functional as F
 
 
-class DeepAR(nn.Module):
+class ProbabilisticRNN(nn.Module):
     """
-    Minimal multivariate DeepAR-style probabilistic forecaster.
+    Minimal multivariate probabilistic RNN forecaster.
 
-    This model uses a GRU encoder and outputs Gaussian parameters
-    for each future time step and variable.
+    Uses a GRU encoder and outputs Gaussian parameters for each
+    future time step and variable.
     """
 
     def __init__(
@@ -44,7 +44,10 @@ class DeepAR(nn.Module):
             prediction_length * input_dim,
         )
 
-    def forward(self, context: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        context: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Parameters
         ----------
@@ -82,6 +85,79 @@ class DeepAR(nn.Module):
 
         return mean, scale
 
+    @torch.no_grad()
+    def sample(
+        self,
+        context: torch.Tensor,
+        n_samples: int = 100,
+    ) -> torch.Tensor:
+        """
+        Sample probabilistic forecast trajectories.
+
+        Parameters
+        ----------
+        context:
+            Shape (batch, context_length, input_dim)
+
+        n_samples:
+            Number of sampled trajectories.
+
+        Returns
+        -------
+        samples:
+            Shape (n_samples, batch, prediction_length, input_dim)
+        """
+        mean, scale = self.forward(context)
+
+        dist = torch.distributions.Normal(
+            mean,
+            scale,
+        )
+
+        samples = dist.sample(
+            (n_samples,)
+        )
+
+        return samples
+
+    @torch.no_grad()
+    def predict_mean(
+        self,
+        context: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Return forecast mean.
+
+        Output shape:
+            (batch, prediction_length, input_dim)
+        """
+        mean, _ = self.forward(context)
+        return mean
+
+    @torch.no_grad()
+    def predict_scale(
+        self,
+        context: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Return forecast scale.
+
+        Output shape:
+            (batch, prediction_length, input_dim)
+        """
+        _, scale = self.forward(context)
+        return scale
+
+
+class DeepAR(ProbabilisticRNN):
+    """
+    Backward-compatible alias.
+
+    This model is DeepAR-style but implemented as a direct
+    multi-step probabilistic GRU forecaster.
+    """
+    pass
+
 
 def gaussian_nll(
     target: torch.Tensor,
@@ -91,5 +167,9 @@ def gaussian_nll(
     """
     Gaussian negative log likelihood.
     """
-    dist = torch.distributions.Normal(mean, scale)
+    dist = torch.distributions.Normal(
+        mean,
+        scale,
+    )
+
     return -dist.log_prob(target).mean()
