@@ -604,3 +604,307 @@ def innovation_recovery_summary(
                 )
 
     return pd.DataFrame(recovery_rows)
+
+def fit_and_sample_diffusion_innovations(
+    residual_store: dict,
+    forecast_models: list[str],
+    dgp_names: list[str],
+    output_dir,
+    seed: int,
+    **diffusion_kwargs,
+) -> tuple[dict, dict]:
+    """
+    Fit diffusion innovation models across forecast models and DGPs,
+    then sample flat one-step innovation draws.
+    """
+    from pathlib import Path
+
+    from src.experiments.artifacts import save_array_npz
+
+    output_dir = Path(output_dir)
+
+    n_samples = diffusion_kwargs.pop("n_samples")
+
+    diffusion_models = {}
+    diffusion_samples = {}
+
+    for forecast_model in forecast_models:
+        diffusion_models[forecast_model] = {}
+        diffusion_samples[forecast_model] = {}
+
+        for dgp_name in dgp_names:
+
+            residuals = residual_store[forecast_model][dgp_name]
+
+            print(
+                f"\nTraining diffusion model:"
+                f" {forecast_model} | {dgp_name}"
+            )
+
+            diffusion_model = fit_innovations(
+                residuals=residuals,
+                method="diffusion",
+                save=True,
+                output_dir=(
+                    output_dir
+                    / forecast_model.lower()
+                    / dgp_name
+                    / "diffusion"
+                ),
+                **diffusion_kwargs,
+            )
+
+            samples = sample_innovations(
+                innovation_model=diffusion_model,
+                n_paths=n_samples,
+                horizon=1,
+                seed=seed,
+            )
+
+            samples = samples[:, 0, :]
+
+            diffusion_models[forecast_model][dgp_name] = diffusion_model
+            diffusion_samples[forecast_model][dgp_name] = samples
+
+            save_array_npz(
+                (
+                    output_dir
+                    / forecast_model.lower()
+                    / dgp_name
+                    / "diffusion_samples.npz"
+                ),
+                innovations=samples,
+            )
+
+            print(
+                forecast_model,
+                dgp_name,
+                samples.shape,
+            )
+
+    return diffusion_models, diffusion_samples
+
+def diffusion_diagnostics_table(
+    residual_store,
+    diffusion_samples,
+    forecast_models,
+    dgp_names,
+):
+    import pandas as pd
+
+    from src.innovations.diagnostics import summarize_innovations
+
+    rows = []
+
+    for forecast_model in forecast_models:
+        for dgp_name in dgp_names:
+            empirical = residual_store[forecast_model][dgp_name]
+            generated = diffusion_samples[forecast_model][dgp_name]
+
+            emp_diag = summarize_innovations(empirical)
+            gen_diag = summarize_innovations(generated)
+
+            for j in range(empirical.shape[1]):
+                rows.append(
+                    {
+                        "forecast_model": forecast_model,
+                        "dgp": dgp_name,
+                        "series": j + 1,
+                        "source": "empirical_residuals",
+                        "mean": emp_diag["mean"][j],
+                        "std": emp_diag["std"][j],
+                        "skewness": emp_diag["skewness"][j],
+                        "kurtosis": emp_diag["kurtosis"][j],
+                        "excess_kurtosis": emp_diag["excess_kurtosis"][j],
+                        "jb_pvalue": emp_diag["jarque_bera_pvalue"][j],
+                    }
+                )
+
+                rows.append(
+                    {
+                        "forecast_model": forecast_model,
+                        "dgp": dgp_name,
+                        "series": j + 1,
+                        "source": "diffusion",
+                        "mean": gen_diag["mean"][j],
+                        "std": gen_diag["std"][j],
+                        "skewness": gen_diag["skewness"][j],
+                        "kurtosis": gen_diag["kurtosis"][j],
+                        "excess_kurtosis": gen_diag["excess_kurtosis"][j],
+                        "jb_pvalue": gen_diag["jarque_bera_pvalue"][j],
+                    }
+                )
+
+    return pd.DataFrame(rows)
+
+def diffusion_diagnostics_summary(
+    diffusion_diag_df,
+):
+    return (
+        diffusion_diag_df
+        .groupby(
+            [
+                "forecast_model",
+                "dgp",
+                "source",
+            ]
+        )[
+            [
+                "mean",
+                "std",
+                "skewness",
+                "kurtosis",
+                "excess_kurtosis",
+            ]
+        ]
+        .mean()
+        .reset_index()
+    )
+
+def diffusion_quantile_recovery_table(
+    residual_store,
+    diffusion_samples,
+    forecast_models,
+    dgp_names,
+    quantiles,
+):
+    import numpy as np
+    import pandas as pd
+
+    q_rows = []
+
+    for forecast_model in forecast_models:
+        for dgp_name in dgp_names:
+
+            empirical = residual_store[
+                forecast_model
+            ][
+                dgp_name
+            ]
+
+            generated = diffusion_samples[
+                forecast_model
+            ][
+                dgp_name
+            ]
+
+            for j in range(empirical.shape[1]):
+
+                emp_q = np.quantile(
+                    empirical[:, j],
+                    quantiles,
+                )
+
+                gen_q = np.quantile(
+                    generated[:, j],
+                    quantiles,
+                )
+
+                for q, e, g in zip(
+                    quantiles,
+                    emp_q,
+                    gen_q,
+                ):
+                    q_rows.append(
+                        {
+                            "forecast_model": forecast_model,
+                            "dgp": dgp_name,
+                            "series": j + 1,
+                            "quantile": q,
+                            "empirical": e,
+                            "diffusion": g,
+                            "absolute_error": abs(e - g),
+                        }
+                    )
+
+    return pd.DataFrame(q_rows)
+
+def diffusion_moment_error_table(
+    residual_store,
+    diffusion_samples,
+    forecast_models,
+    dgp_names,
+):
+    import numpy as np
+    import pandas as pd
+    import scipy.stats as stats
+
+    moment_rows = []
+
+    for forecast_model in forecast_models:
+        for dgp_name in dgp_names:
+
+            empirical = residual_store[
+                forecast_model
+            ][
+                dgp_name
+            ]
+
+            generated = diffusion_samples[
+                forecast_model
+            ][
+                dgp_name
+            ]
+
+            emp_mean = empirical.mean(axis=0)
+            gen_mean = generated.mean(axis=0)
+
+            emp_cov = np.cov(
+                empirical,
+                rowvar=False,
+            )
+
+            gen_cov = np.cov(
+                generated,
+                rowvar=False,
+            )
+
+            emp_skew = stats.skew(
+                empirical,
+                axis=0,
+            )
+
+            gen_skew = stats.skew(
+                generated,
+                axis=0,
+            )
+
+            emp_kurt = stats.kurtosis(
+                empirical,
+                axis=0,
+                fisher=False,
+            )
+
+            gen_kurt = stats.kurtosis(
+                generated,
+                axis=0,
+                fisher=False,
+            )
+
+            moment_rows.append(
+                {
+                    "forecast_model": forecast_model,
+                    "dgp": dgp_name,
+                    "mean_l2_error":
+                        np.linalg.norm(
+                            emp_mean - gen_mean
+                        ),
+                    "cov_frobenius_error":
+                        np.linalg.norm(
+                            emp_cov - gen_cov,
+                            ord="fro",
+                        ),
+                    "skew_l2_error":
+                        np.linalg.norm(
+                            emp_skew - gen_skew
+                        ),
+                    "kurtosis_l2_error":
+                        np.linalg.norm(
+                            emp_kurt - gen_kurt
+                        ),
+                }
+            )
+
+    return pd.DataFrame(
+        moment_rows
+    )

@@ -484,3 +484,67 @@ def compare_mean_forecasts(
         )
 
     return pd.DataFrame(rows)
+
+def fit_forecasting_models(
+    datasets,
+    forecast_models,
+    lags,
+    rnn_context_length,
+    rnn_prediction_length,
+    rnn_hidden_dim,
+    rnn_num_layers,
+    rnn_dropout,
+    rnn_batch_size,
+    rnn_epochs,
+    rnn_lr,
+    rnn_device,
+    output_dir,
+):
+    fitted_models = {}
+
+    for forecast_model in forecast_models:
+        fitted_models[forecast_model] = {}
+
+        for dgp_name, data in datasets.items():
+
+            y_train = data["y_train"]
+
+            if forecast_model == "VAR":
+
+                fit = fit_model(
+                    data=y_train,
+                    model="var",
+                    lags=lags,
+                    include_intercept=True,
+                    save=True,
+                    output_dir=output_dir / "var" / dgp_name,
+                )
+
+            elif forecast_model == "RNN":
+
+                fit = fit_model(
+                    data=y_train,
+                    model="rnn",
+                    context_length=rnn_context_length,
+                    prediction_length=rnn_prediction_length,
+                    hidden_dim=rnn_hidden_dim,
+                    num_layers=rnn_num_layers,
+                    dropout=rnn_dropout,
+                    batch_size=rnn_batch_size,
+                    epochs=rnn_epochs,
+                    lr=rnn_lr,
+                    device=rnn_device,
+                    verbose=False,
+                    save=True,
+                    output_dir=output_dir / "rnn" / dgp_name,
+                )
+
+            fitted_models[forecast_model][dgp_name] = fit
+
+            print(
+                forecast_model,
+                dgp_name,
+                "fit complete",
+            )
+
+    return fitted_models
