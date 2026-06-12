@@ -616,6 +616,8 @@ def fit_and_sample_diffusion_innovations(
     """
     Fit diffusion innovation models across forecast models and DGPs,
     then sample flat one-step innovation draws.
+
+    Residual standardization is handled inside _fit_diffusion().
     """
     from pathlib import Path
 

@@ -1,0 +1,913 @@
+\documentclass[11pt]{article}
+
+% --------------------------------------------------
+% Packages
+% --------------------------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{parskip}
+
+% --------------------------------------------------
+% Formatting
+% --------------------------------------------------
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\setlist[itemize]{leftmargin=1.5em}
+\setlist[enumerate]{leftmargin=1.5em}
+
+\graphicspath{
+    {../../results/figures/01_dgp_eda/}
+    {../../results/figures/02_var_deepar_fit/}
+    {../../results/figures/03_residuals/}
+    {../../results/figures/04_innovations/}
+    {../../results/figures/05_diffusion/}
+    {../../results/figures/06_forecasts/}
+    {../../results/figures/07_calibration_evaluation/}
+}
+
+% --------------------------------------------------
+% Title
+% --------------------------------------------------
+\title{
+    Numerical Experiments Update: \\
+    Flexible Innovation Modeling for Probabilistic Forecast Calibration
+}
+
+\author{Jonathan Ma}
+
+\date{June 12, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report summarizes the current numerical experiment work. The current research question is: \emph{When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?} The experiments compare classical and diffusion-based innovation models within VAR and RNN forecasting systems under controlled simulated data-generating processes. Robustness analysis will be added in a later part, and so will an application to real data.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ==================================================
+\section{Introduction}
+% ==================================================
+
+The goal is to explain how forecast residuals are treated as empirical innovation proxies, how innovation models are fit to those residuals, and how sampled innovations are propagated through forecasting systems to evaluate probabilistic calibration.
+
+\emph{When do flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification?}
+
+
+\subsection{Implemented Workflow}
+
+\begin{enumerate}
+    \item Generate or observe multivariate time series.
+    \item Fit forecasting models, currently VAR and RNN/DeepAR-style models.
+    \item Extract forecast residuals as empirical innovation proxies.
+    \item Fit innovation models to residuals.
+    \item Sample future innovations.
+    \item Propagate innovations through forecasting recursions.
+    \item Evaluate calibration and probabilistic forecast quality.
+\end{enumerate}
+
+\subsection{Current Status}
+
+Completed:
+\begin{itemize}
+    \item Simulation framework
+    \item Classical and Deep forecasting models
+    \item Residual extraction and diagnostics
+    \item Classical innovation models
+    \item Diffusion innovation model
+    \item Forecast generation
+    \item Initial calibration evaluation
+\end{itemize}
+
+Remaining:
+\begin{itemize}
+    \item Robustness experiments
+    \item Wasserstein perturbation analysis
+    \item Real-data Case Study
+    \item Calibration-aware residual learning?
+    \item Final thesis writing and synthesis
+\end{itemize}
+
+% ==================================================
+\section{Data-Generating Processes}
+% ==================================================
+
+We want to evaluate whether flexible innovation models can improve probabilistic forecast calibration when the underlying innovation distribution deviates from standard Gaussian assumptions. To isolate the role of innovation modeling, all experiments are constructed from a common vector autoregressive (VAR) system while varying only the innovation-generating mechanism. This provides a controlled environment in which differences in forecast performance can be attributed to the innovation distribution rather than changes in the underlying temporal dynamics.
+
+The simulated data are generated from a stable VAR(1) process,
+
+\[
+y_t = A y_{t-1} + \varepsilon_t,
+\]
+
+where \(y_t \in \mathbb{R}^3\), \(A\) is a fixed stable coefficient matrix, and \(\varepsilon_t\) denotes the residual vector. The autoregressive dynamics and covariance structure are held constant across all experiments. After a burn-in period of 100 observations, a total of 800 observations are retained for analysis. The first 600 observations are used for model fitting and residual extraction, while the remaining observations are reserved for forecasting experiments.
+
+Four innovation regimes are considered:
+
+\begin{enumerate}
+    \item \textbf{Gaussian}: multivariate Gaussian innovations representing the correctly specified benchmark.
+    \item \textbf{Student-\(t\)}: heavy-tailed innovations generated from a multivariate Student-\(t\) distribution with \(\nu=3.5\) degrees of freedom.
+    \item \textbf{Mixture}: a Gaussian mixture process in which a small proportion of observations are drawn from a higher-variance component, producing occasional extreme shocks.
+    \item \textbf{Heteroskedastic}: innovations with time-varying variance, generating periods of low and high volatility.
+\end{enumerate}
+
+Figure~\ref{fig:dgp_series} displays the first simulated series from each innovation regime. Although all systems share identical autoregressive dynamics, the resulting trajectories exhibit noticeably different stochastic behavior. The Gaussian process remains comparatively stable, whereas the Student-\(t\) and mixture systems generate substantially larger shocks. The heteroskedastic process exhibits alternating periods of calm and elevated volatility.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{raw_dgp_series.png}
+    \caption{Simulated VAR trajectories under the four innovation regimes. All systems share identical autoregressive dynamics and differ only in their innovation distributions.}
+    \label{fig:dgp_series}
+\end{figure}
+
+To verify that the simulated innovations exhibit the intended distributional properties, diagnostic statistics were computed directly from the generated innovations. Table~\ref{tab:dgp_diagnostics} summarizes the distributional characteristics of each innovation regime.
+
+\begin{table}[H]
+\centering
+\caption{Summary innovation diagnostics by data-generating process.}
+\label{tab:dgp_diagnostics}
+\begin{tabular}{lrrrr}
+\toprule
+DGP & Skewness & Kurtosis & Excess Kurtosis & JB p-value \\
+\midrule
+Gaussian & 0.032 & 3.138 & 0.138 & $5.042\times10^{-1}$ \\
+Heteroskedastic & -0.126 & 5.597 & 2.597 & $4.970\times10^{-49}$ \\
+Mixture & -0.068 & 8.116 & 5.116 & $1.673\times10^{-123}$ \\
+Student-$t$ & 0.243 & 11.301 & 8.301 & $1.165\times10^{-143}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The Gaussian innovations remain close to the normal benchmark, exhibiting near-zero skewness and kurtosis near three. In contrast, all three misspecified regimes display substantial departures from normality. The heteroskedastic process exhibits elevated kurtosis due to time-varying volatility, while the mixture and Student-\(t\) systems exhibit substantially heavier tails. Among all regimes, the Student-\(t\) innovations produce the largest excess kurtosis and the strongest rejection of normality.
+
+Figure~\ref{fig:dgp_histograms} shows the empirical innovation distributions for the first simulated series. The Gaussian innovations appear approximately bell-shaped, whereas the Student-\(t\) and mixture regimes display visibly heavier tails. The heteroskedastic process exhibits broader dispersion arising from alternating volatility levels.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{innovation_histograms.png}
+    \caption{Innovation histograms for the first simulated series under each data-generating process.}
+    \label{fig:dgp_histograms}
+\end{figure}
+
+Additional evidence of non-Gaussian behavior is provided by the normal QQ-plots shown in Figure~\ref{fig:dgp_qqplots}. The Gaussian innovations remain close to the theoretical reference line, while the Student-\(t\), mixture, and heteroskedastic innovations exhibit increasingly pronounced tail deviations. These departures confirm that the simulated environments represent meaningful forms of innovation misspecification.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{innovation_qqplots.png}
+    \caption{Normal QQ-plots of innovations for the first simulated series under each data-generating process.}
+    \label{fig:dgp_qqplots}
+\end{figure}
+
+Overall, the simulation framework provides a controlled collection of forecasting environments ranging from correctly specified Gaussian innovations to increasingly challenging forms of misspecification. Because the autoregressive dynamics remain fixed across all scenarios, subsequent differences in residual behavior, innovation recovery, forecast quality, and calibration can be attributed directly to the innovation-generating process.
+
+% ==================================================
+\section{Model Fit}
+
+This section fits the two forecasting backbones used throughout the remainder of the study: a classical vector autoregression (VAR) model and a probabilistic recurrent neural network (RNN) inspired by the DeepAR forecasting framework. The objective is not to maximize forecasting accuracy at this stage, but rather to establish reasonable forecasting models from which residuals can be extracted and subsequently modeled using alternative innovation distributions.
+
+\subsection*{Vector Autoregression}
+
+Each simulated dataset was fitted using a VAR(1) specification. The lag order was fixed across all experiments to ensure consistency and to prevent differences in later calibration results from being driven by changes in model complexity.
+
+Table~\ref{tab:var_fit_summary} summarizes the fitted VAR models.
+
+\begin{table}[H]
+\centering
+\caption{VAR fitting diagnostics across data-generating processes.}
+\label{tab:var_fit_summary}
+\begin{tabular}{lcccc}
+\toprule
+DGP & Stable & Max Eigenvalue Modulus & Residual Mean & Residual Std. \\
+\midrule
+Gaussian & True & 0.479 & $1.15\times10^{-16}$ & 1.016 \\
+Student-$t$ & True & 0.448 & $8.64\times10^{-17}$ & 1.424 \\
+Mixture & True & 0.452 & $5.49\times10^{-17}$ & 1.441 \\
+Heteroskedastic & True & 0.401 & $4.35\times10^{-17}$ & 1.829 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All fitted VAR models satisfied the stability condition, with maximum eigenvalue moduli substantially below one. Residual means were effectively zero across all scenarios, indicating that the models successfully captured the conditional mean structure of the simulated processes. As expected, the heavy-tailed and heteroskedastic environments produced larger residual standard deviations than the Gaussian benchmark.
+
+To assess baseline forecasting behavior, recursive mean forecasts were generated from each fitted VAR model. Figure~\ref{fig:var_mean_forecasts} displays the resulting forecasts for the first series.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{var_mean_forecasts.png}
+    \caption{VAR mean forecasts for the first series under each data-generating process.}
+    \label{fig:var_mean_forecasts}
+\end{figure}
+
+The VAR forecasts generally revert toward the conditional mean as the forecast horizon increases. This behavior is expected for a stable autoregressive system and highlights the importance of innovation modeling in generating realistic forecast uncertainty and tail behavior.
+
+\subsection*{Probabilistic Recurrent Neural Network}
+
+A probabilistic RNN was trained separately on each dataset using a DeepAR-style architecture with Gaussian predictive outputs. The network used a context length of 40 observations and produced probabilistic forecasts over the full forecast horizon.
+
+Table~\ref{tab:rnn_fit_summary} summarizes the final training results.
+
+\begin{table}[H]
+\centering
+\caption{RNN fitting diagnostics across data-generating processes.}
+\label{tab:rnn_fit_summary}
+\begin{tabular}{lcc}
+\toprule
+DGP & Epochs & Final Loss \\
+\midrule
+Gaussian & 100 & 1.365 \\
+Student-$t$ & 100 & 1.709 \\
+Mixture & 100 & 1.754 \\
+Heteroskedastic & 100 & 1.473 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:rnn_training_loss} shows the training loss trajectories. In all cases the optimization procedure converged smoothly, with losses decreasing rapidly during the early epochs before gradually stabilizing. The heavier-tailed datasets required larger final loss values, reflecting the greater difficulty of modeling their conditional distributions using a Gaussian predictive likelihood.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{rnn_training_loss.png}
+    \caption{RNN training loss trajectories across data-generating processes.}
+    \label{fig:rnn_training_loss}
+\end{figure}
+
+The learned predictive standard deviations also reflected the underlying innovation structure. The Gaussian dataset produced the smallest average predictive scales, while the mixture and heteroskedastic datasets generated substantially larger predictive uncertainty. This suggests that the network adapted its uncertainty estimates to the complexity of the observed training data.
+
+\subsection*{Baseline Forecast Comparison}
+
+Before introducing alternative innovation models, the mean forecast accuracy of the VAR and RNN models was compared directly. Table~\ref{tab:forecast_comparison} reports mean squared error (MSE) and mean absolute error (MAE) over the forecast horizon.
+
+\begin{table}[H]
+\centering
+\caption{Comparison of VAR and RNN mean forecast accuracy.}
+\label{tab:forecast_comparison}
+\begin{tabular}{lcccc}
+\toprule
+DGP & VAR MSE & RNN MSE & VAR MAE & RNN MAE \\
+\midrule
+Gaussian & 1.672 & 1.698 & 0.990 & 1.050 \\
+Student-$t$ & 2.422 & 2.493 & 1.159 & 1.165 \\
+Mixture & 4.536 & 4.733 & 1.569 & 1.612 \\
+Heteroskedastic & 4.672 & 4.591 & 1.409 & 1.402 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two forecasting backbones exhibit broadly similar performance. The VAR model achieves slightly lower forecast errors in the Gaussian, Student-\(t\), and mixture settings, while the RNN performs marginally better under heteroskedasticity. These differences are relatively small compared to the differences expected from alternative innovation models later in the forecasting pipeline.
+
+Overall, both forecasting models provide reasonable baseline representations of the conditional mean dynamics. The VAR offers a classical linear benchmark, while the RNN provides a nonlinear probabilistic alternative. Since neither model dominates across all scenarios, both are retained for the subsequent residual extraction and innovation modeling experiments.
+
+
+
+% ==================================================
+\section{Residual Extraction}
+
+The central hypothesis of this study concerns innovation modeling rather than conditional mean modeling. Consequently, after fitting the forecasting backbones, the next step is to extract residuals that serve as empirical proxies for the latent innovation process. These residuals form the training data for all subsequent innovation models, including Gaussian, bootstrap, Student-\(t\), and diffusion-based approaches.
+
+Residuals were extracted from both the VAR and RNN forecasting models for each simulated dataset. The VAR residuals are obtained from one-step-ahead prediction errors, while the RNN residuals are computed as the difference between observed values and the corresponding predictive means. These residuals provide an empirical estimate of the innovation distribution remaining after the conditional mean dynamics have been removed.
+
+\subsection*{Distributional Diagnostics}
+
+To assess whether the residuals retain the intended distributional properties of the underlying innovations, several diagnostic statistics were computed for each DGP and forecasting model. Table~\ref{tab:residual_summary} summarizes the average residual characteristics.
+
+\begin{table}[H]
+\centering
+\caption{Residual distribution diagnostics.}
+\label{tab:residual_summary}
+\begin{tabular}{llccccc}
+\toprule
+DGP & Model & Mean & Std & Skewness & Kurtosis & JB p-value \\
+\midrule
+Gaussian & VAR & 0.000 & 1.016 & 0.059 & 3.182 & 0.461 \\
+Gaussian & RNN & -0.013 & 0.941 & -0.033 & 3.589 & 0.107 \\
+
+Student-$t$ & VAR & 0.000 & 1.424 & -0.181 & 8.674 & $2.19\times10^{-137}$ \\
+Student-$t$ & RNN & 0.002 & 1.394 & -0.268 & 8.974 & $6.93\times10^{-63}$ \\
+
+Mixture & VAR & 0.000 & 1.441 & -0.012 & 8.564 & $9.58\times10^{-88}$ \\
+Mixture & RNN & -0.001 & 1.428 & -0.092 & 8.345 & $1.01\times10^{-98}$ \\
+
+Heteroskedastic & VAR & 0.000 & 1.829 & -0.165 & 5.701 & $2.78\times10^{-38}$ \\
+Heteroskedastic & RNN & -0.017 & 1.849 & -0.243 & 5.702 & $3.50\times10^{-32}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several observations emerge from these diagnostics. First, both forecasting models produce residuals with means close to zero, indicating that the conditional mean structure has largely been removed. Second, the Gaussian DGP yields residuals that remain approximately Gaussian, with kurtosis values near three and non-significant Jarque--Bera statistics. In contrast, the Student-\(t\), mixture, and heteroskedastic settings exhibit substantial excess kurtosis and strongly reject normality. Importantly, these characteristics are preserved across both forecasting backbones, suggesting that residual extraction successfully retains the distributional features of the underlying innovation process.
+
+Figure~\ref{fig:residual_histograms} visualizes the marginal residual distributions for the first series under each DGP.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{var_rnn_residual_histograms.png}
+    \caption{Residual histograms for VAR and RNN models across all data-generating processes.}
+    \label{fig:residual_histograms}
+\end{figure}
+
+The histograms clearly distinguish the four innovation environments. Gaussian residuals remain approximately bell-shaped, while the Student-\(t\) and mixture settings display visibly heavier tails. The heteroskedastic process exhibits a concentration near zero combined with occasional large deviations, reflecting its time-varying variance structure.
+
+\subsection*{Normality Assessment}
+
+To further evaluate departures from Gaussianity, normal Q--Q plots were generated for all residual sets.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{var_rnn_residual_qqplots.png}
+    \caption{Residual Q--Q plots relative to the Gaussian distribution.}
+    \label{fig:residual_qqplots}
+\end{figure}
+
+The Q--Q plots reveal substantial tail deviations in the Student-\(t\), mixture, and heteroskedastic environments. In each case the empirical quantiles diverge from the theoretical Gaussian reference line in the tails, indicating heavier-than-Gaussian behavior. By contrast, the Gaussian DGP remains closely aligned with the reference line. These results confirm that the residual distributions retain meaningful distributional misspecification that may potentially be exploited by more flexible innovation models.
+
+\subsection*{Residual Independence}
+
+An important requirement for innovation modeling is that residuals exhibit minimal remaining serial dependence. Figure~\ref{fig:residual_acf} presents residual autocorrelation functions up to lag twenty.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{var_rnn_residual_acf.png}
+    \caption{Residual autocorrelation functions for VAR and RNN residuals.}
+    \label{fig:residual_acf}
+\end{figure}
+
+Table~\ref{tab:acf_summary} summarizes the lag-one and lag-five residual autocorrelations.
+
+\begin{table}[H]
+\centering
+\caption{Residual autocorrelation diagnostics.}
+\label{tab:acf_summary}
+\begin{tabular}{llcc}
+\toprule
+DGP & Model & ACF Lag 1 & ACF Lag 5 \\
+\midrule
+Gaussian & VAR & -0.030 & 0.047 \\
+Student-$t$ & VAR & -0.004 & -0.040 \\
+Mixture & VAR & -0.006 & 0.065 \\
+Heteroskedastic & VAR & 0.025 & 0.059 \\
+Gaussian & RNN & -0.014 & -0.013 \\
+Student-$t$ & RNN & -0.082 & -0.078 \\
+Mixture & RNN & -0.003 & 0.084 \\
+Heteroskedastic & RNN & -0.076 & 0.031 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across all settings, residual autocorrelations remain relatively small in magnitude. This suggests that both forecasting models successfully capture the dominant temporal dependence structure, leaving residuals that are approximately serially uncorrelated and therefore suitable for innovation modeling.
+
+\subsection*{Variance Dynamics}
+
+Finally, rolling residual standard deviations were examined using a 30-observation window in order to assess remaining heteroskedastic behavior.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{var_rnn_rolling_residual_std.png}
+    \caption{Rolling residual standard deviations using a 30-observation window.}
+    \label{fig:rolling_residual_std}
+\end{figure}
+
+Table~\ref{tab:variance_summary} summarizes the variability of the rolling standard deviations.
+
+\begin{table}[H]
+\centering
+\caption{Rolling variance diagnostics.}
+\label{tab:variance_summary}
+\begin{tabular}{llccc}
+\toprule
+DGP & Model & Mean Rolling Std & Std Rolling Std & CV \\
+\midrule
+Gaussian & VAR & 1.002 & 0.134 & 0.134 \\
+Gaussian & RNN & 0.955 & 0.135 & 0.141 \\
+
+Student-$t$ & VAR & 1.377 & 0.330 & 0.239 \\
+Student-$t$ & RNN & 1.357 & 0.329 & 0.242 \\
+
+Mixture & VAR & 1.423 & 0.311 & 0.218 \\
+Mixture & RNN & 1.417 & 0.311 & 0.220 \\
+
+Heteroskedastic & VAR & 1.680 & 0.790 & 0.470 \\
+Heteroskedastic & RNN & 1.690 & 0.796 & 0.471 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The heteroskedastic DGP exhibits substantially larger variation in rolling standard deviations than any other setting, confirming that the simulated volatility dynamics remain present in the extracted residuals. The Student-\(t\) and mixture environments show moderate variability, while the Gaussian process remains comparatively stable. Importantly, both forecasting backbones produce nearly identical variance diagnostics, indicating that residual characteristics are driven primarily by the underlying innovation process rather than the choice of forecasting model.
+
+Overall, the residual diagnostics indicate that both forecasting models successfully remove most conditional mean dependence while preserving the key distributional features of the underlying innovation processes. The extracted residuals therefore provide a suitable foundation for the innovation modeling experiments developed in the next section.
+% ==================================================
+\section{Innovation Modeling}
+
+Following residual extraction, probabilistic innovation models were fitted to the empirical residual distributions. These innovation models represent competing assumptions about the distribution of future shocks and provide the inputs used later for probabilistic forecast generation.
+
+Three classical innovation models were considered: multivariate Gaussian innovations, residual bootstrap innovations, and multivariate Student-\(t\) innovations. The Gaussian model estimates a residual mean vector and covariance matrix and samples from a multivariate normal distribution. The bootstrap model resamples empirical residual vectors with replacement. The Student-\(t\) model provides a parametric heavy-tailed alternative.
+
+For each combination of forecasting model and DGP, \(1{,}000\) innovation paths of length \(40\) were sampled. The resulting innovation samples were compared against the empirical residuals using distributional diagnostics and recovery errors.
+
+Table~\ref{tab:innovation_diagnostics_summary} reports summary diagnostics for the empirical residuals and fitted innovation models. To keep the table readable, the Gaussian DGP is omitted because the main purpose of this section is to evaluate recovery under misspecification.
+
+\begin{table}[H]
+\centering
+\caption{Innovation diagnostics under non-Gaussian DGPs.}
+\label{tab:innovation_diagnostics_summary}
+\small
+\begin{tabular}{lllrrrr}
+\toprule
+Forecast & DGP & Innovation & Mean & Std & Skewness & Kurtosis \\
+\midrule
+VAR & Student-\(t\) & Empirical & 0.000 & 1.424 & -0.181 & 8.674 \\
+VAR & Student-\(t\) & Gaussian & -0.004 & 1.424 & 0.008 & 3.032 \\
+VAR & Student-\(t\) & Bootstrap & 0.002 & 1.416 & -0.198 & 8.456 \\
+VAR & Student-\(t\) & Student-\(t\) & -0.006 & 1.425 & -0.004 & 7.163 \\
+\midrule
+VAR & Mixture & Empirical & 0.000 & 1.441 & -0.012 & 8.564 \\
+VAR & Mixture & Gaussian & -0.003 & 1.442 & 0.008 & 3.026 \\
+VAR & Mixture & Bootstrap & 0.000 & 1.437 & -0.038 & 8.333 \\
+VAR & Mixture & Student-\(t\) & -0.006 & 1.442 & -0.024 & 6.952 \\
+\midrule
+VAR & Heteroskedastic & Empirical & 0.000 & 1.829 & -0.165 & 5.701 \\
+VAR & Heteroskedastic & Gaussian & -0.001 & 1.828 & 0.014 & 3.015 \\
+VAR & Heteroskedastic & Bootstrap & 0.003 & 1.825 & -0.147 & 5.698 \\
+VAR & Heteroskedastic & Student-\(t\) & -0.005 & 1.831 & -0.023 & 7.540 \\
+\midrule
+RNN & Student-\(t\) & Empirical & 0.002 & 1.394 & -0.268 & 8.974 \\
+RNN & Student-\(t\) & Gaussian & -0.002 & 1.394 & 0.006 & 3.032 \\
+RNN & Student-\(t\) & Bootstrap & -0.002 & 1.385 & -0.285 & 8.853 \\
+RNN & Student-\(t\) & Student-\(t\) & -0.004 & 1.395 & -0.009 & 7.101 \\
+\midrule
+RNN & Mixture & Empirical & -0.001 & 1.428 & -0.092 & 8.345 \\
+RNN & Mixture & Gaussian & -0.004 & 1.428 & 0.008 & 3.025 \\
+RNN & Mixture & Bootstrap & -0.007 & 1.423 & -0.077 & 8.402 \\
+RNN & Mixture & Student-\(t\) & -0.007 & 1.429 & -0.023 & 6.986 \\
+\midrule
+RNN & Heteroskedastic & Empirical & -0.017 & 1.849 & -0.243 & 5.702 \\
+RNN & Heteroskedastic & Gaussian & -0.021 & 1.848 & 0.006 & 3.010 \\
+RNN & Heteroskedastic & Bootstrap & -0.015 & 1.853 & -0.228 & 5.604 \\
+RNN & Heteroskedastic & Student-\(t\) & -0.022 & 1.852 & 0.018 & 7.583 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The Gaussian innovation model accurately reproduces the residual scale but collapses higher-order structure toward normality. Across all non-Gaussian DGPs, Gaussian innovation samples have kurtosis close to three even when empirical residual kurtosis ranges from approximately \(5.7\) to \(9.0\). This confirms that a Gaussian innovation assumption removes the heavy-tail behavior introduced by the simulated misspecification.
+
+The bootstrap model most closely reproduces the empirical residual distributions. Since it resamples observed residual vectors directly, it preserves both residual scale and higher-order moment structure. The Student-\(t\) model captures heavier tails than the Gaussian model, but its fixed parametric form does not match the empirical residual distributions as closely as the bootstrap.
+
+Table~\ref{tab:innovation_recovery_summary} reports skewness and kurtosis recovery errors relative to the empirical residuals.
+
+\begin{table}[H]
+\centering
+\caption{Innovation recovery errors. Lower values indicate more accurate recovery.}
+\label{tab:innovation_recovery_summary}
+\small
+\begin{tabular}{lllrr}
+\toprule
+Forecast & DGP & Innovation & Kurtosis Error & Skewness Error \\
+\midrule
+VAR & Gaussian & Gaussian & 0.157 & 0.104 \\
+VAR & Gaussian & Bootstrap & 0.037 & 0.014 \\
+VAR & Gaussian & Student-\(t\) & 4.021 & 0.169 \\
+\midrule
+VAR & Student-\(t\) & Gaussian & 5.642 & 0.646 \\
+VAR & Student-\(t\) & Bootstrap & 0.247 & 0.078 \\
+VAR & Student-\(t\) & Student-\(t\) & 1.511 & 0.615 \\
+\midrule
+VAR & Mixture & Gaussian & 5.538 & 0.472 \\
+VAR & Mixture & Bootstrap & 0.232 & 0.026 \\
+VAR & Mixture & Student-\(t\) & 1.612 & 0.417 \\
+\midrule
+VAR & Heteroskedastic & Gaussian & 2.686 & 0.179 \\
+VAR & Heteroskedastic & Bootstrap & 0.015 & 0.018 \\
+VAR & Heteroskedastic & Student-\(t\) & 1.839 & 0.145 \\
+\midrule
+RNN & Gaussian & Gaussian & 0.556 & 0.096 \\
+RNN & Gaussian & Bootstrap & 0.044 & 0.014 \\
+RNN & Gaussian & Student-\(t\) & 3.545 & 0.150 \\
+\midrule
+RNN & Student-\(t\) & Gaussian & 5.942 & 0.539 \\
+RNN & Student-\(t\) & Bootstrap & 0.140 & 0.023 \\
+RNN & Student-\(t\) & Student-\(t\) & 1.873 & 0.503 \\
+\midrule
+RNN & Mixture & Gaussian & 5.320 & 0.460 \\
+RNN & Mixture & Bootstrap & 0.133 & 0.015 \\
+RNN & Mixture & Student-\(t\) & 1.359 & 0.404 \\
+\midrule
+RNN & Heteroskedastic & Gaussian & 2.693 & 0.249 \\
+RNN & Heteroskedastic & Bootstrap & 0.098 & 0.019 \\
+RNN & Heteroskedastic & Student-\(t\) & 1.880 & 0.261 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The recovery errors make the ranking clear. Bootstrap innovations achieve the lowest skewness and kurtosis errors in every DGP and for both forecasting models. Gaussian innovations perform poorly whenever the empirical residuals are heavy-tailed, especially for the Student-\(t\) and mixture DGPs. Student-\(t\) innovations improve tail recovery relative to Gaussian innovations in the non-Gaussian settings, but they remain less accurate than bootstrap resampling.
+
+Figures~\ref{fig:innovation_histograms} and~\ref{fig:innovation_qq} show a representative visual comparison for the heteroskedastic VAR residuals.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{var_heteroskedastic_innovation_comparison.png}
+    \caption{Comparison of empirical residuals and generated innovation samples under the heteroskedastic VAR setting.}
+    \label{fig:innovation_histograms}
+\end{figure}
+
+The histogram comparison shows that the bootstrap model closely reproduces the empirical residual shape. The Gaussian model produces a smoother bell-shaped distribution and removes much of the observed tail behavior. The Student-\(t\) model produces heavier tails than the Gaussian model, but its tails are not matched as closely to the empirical residual distribution as the bootstrap samples.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{var_heteroskedastic_innovation_qq_comparison.png}
+    \caption{Q--Q comparison of empirical residuals and generated innovation samples under the heteroskedastic VAR setting.}
+    \label{fig:innovation_qq}
+\end{figure}
+
+The Q--Q comparison leads to the same conclusion. Bootstrap innovations reproduce the empirical quantile behavior most closely. The Gaussian model is nearly linear against the normal reference and therefore fails to preserve the non-Gaussian residual structure. The Student-\(t\) model introduces tail curvature, but its parametric tail behavior does not match the empirical residual distribution as closely as direct resampling.
+
+Overall, the classical innovation modeling results establish bootstrap resampling as the strongest classical baseline for distribution recovery. Gaussian innovations provide a useful benchmark but systematically remove heavy-tail behavior. Student-\(t\) innovations offer a more flexible parametric alternative, but their fixed tail form limits their ability to match the empirical residual distribution across different types of misspecification.
+
+% ==================================================
+\section{Diffusion-Based Innovation Learning}
+
+The central contribution of this thesis is the introduction of a diffusion-based innovation model for residual distribution learning. Unlike Gaussian, bootstrap, or Student-\(t\) innovations, the diffusion model does not impose a fixed parametric form on the innovation distribution. Instead, it learns the residual distribution through an iterative denoising process and subsequently generates synthetic innovation samples that can be propagated through the forecasting model.
+
+For this first experiment, residuals were standardized prior to training. The diffusion model consisted of a residual denoising multilayer perceptron trained using a DDPM-style objective with 200 diffusion timesteps and 1,500 training epochs. Generated samples were transformed back to the original residual scale before evaluation.
+
+\subsection*{Training Stability}
+
+Figure~\ref{fig:diffusion_training_losses} presents training losses across all forecasting-model and DGP combinations.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{diffusion_training_losses.png}
+    \caption{Diffusion training losses across all forecasting-model and DGP combinations.}
+    \label{fig:diffusion_training_losses}
+\end{figure}
+
+Training was stable in all experiments. Loss decreased rapidly during the early epochs before reaching a relatively flat plateau. No divergence or optimization failures were observed. The heteroskedastic settings exhibited the largest reduction in loss over the training horizon, suggesting that the model continued extracting structure from these residual distributions throughout training.
+
+\subsection*{Distributional Recovery}
+
+To evaluate distributional recovery, diagnostics were computed for both empirical residuals and diffusion-generated innovation samples. Table~\ref{tab:diffusion_diagnostics} reports average moment statistics across the three simulated series.
+
+\begin{table}[H]
+\centering
+\caption{Diffusion innovation diagnostics.}
+\label{tab:diffusion_diagnostics}
+\small
+\begin{tabular}{lllrrrr}
+\toprule
+Forecast & DGP & Source & Mean & Std & Skewness & Kurtosis \\
+\midrule
+VAR & Gaussian & Empirical & 0.000 & 1.016 & 0.059 & 3.182 \\
+VAR & Gaussian & Diffusion & 0.034 & 1.030 & 0.058 & 2.974 \\
+\midrule
+VAR & Student-\(t\) & Empirical & 0.000 & 1.424 & -0.181 & 8.674 \\
+VAR & Student-\(t\) & Diffusion & -0.092 & 1.451 & -0.601 & 8.977 \\
+\midrule
+VAR & Mixture & Empirical & 0.000 & 1.441 & -0.012 & 8.564 \\
+VAR & Mixture & Diffusion & -0.065 & 1.416 & -0.684 & 8.516 \\
+\midrule
+VAR & Heteroskedastic & Empirical & 0.000 & 1.829 & -0.165 & 5.701 \\
+VAR & Heteroskedastic & Diffusion & -0.156 & 1.986 & -0.331 & 5.269 \\
+\midrule
+RNN & Gaussian & Empirical & -0.013 & 0.941 & -0.033 & 3.589 \\
+RNN & Gaussian & Diffusion & 0.076 & 0.901 & 0.050 & 3.235 \\
+\midrule
+RNN & Student-\(t\) & Empirical & 0.002 & 1.394 & -0.268 & 8.974 \\
+RNN & Student-\(t\) & Diffusion & 0.136 & 1.346 & -0.039 & 10.976 \\
+\midrule
+RNN & Mixture & Empirical & -0.001 & 1.428 & -0.092 & 8.345 \\
+RNN & Mixture & Diffusion & 0.117 & 1.466 & 0.586 & 9.056 \\
+\midrule
+RNN & Heteroskedastic & Empirical & -0.017 & 1.849 & -0.243 & 5.702 \\
+RNN & Heteroskedastic & Diffusion & 0.075 & 1.790 & -0.091 & 5.418 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several observations emerge from Table~\ref{tab:diffusion_diagnostics}. First, the diffusion model successfully preserves heavy-tailed behavior. Under the Student-\(t\) and mixture DGPs, generated innovations exhibit kurtosis values very similar to those observed in the empirical residuals. For example, the VAR Student-\(t\) residuals exhibit kurtosis \(8.67\), while the diffusion samples achieve kurtosis \(8.98\). Similarly, the VAR mixture residuals exhibit kurtosis \(8.56\), compared with \(8.52\) for the diffusion samples.
+
+Second, recovery of skewness is less accurate. The diffusion model tends to introduce additional asymmetry, particularly under the mixture DGP. For example, the VAR mixture residuals are nearly symmetric with skewness \(-0.012\), whereas diffusion-generated samples exhibit skewness \(-0.684\). Similar effects are observed in the Student-\(t\) setting.
+
+\subsection*{Moment Recovery Errors}
+
+To quantify recovery accuracy more directly, moment errors were computed between empirical residuals and diffusion-generated samples.
+
+\begin{table}[H]
+\centering
+\caption{Moment recovery errors for diffusion-generated innovations.}
+\label{tab:diffusion_moment_errors}
+\small
+\begin{tabular}{llrrrr}
+\toprule
+Forecast & DGP & Mean Error & Covariance Error & Skew Error & Kurtosis Error \\
+\midrule
+VAR & Gaussian & 0.088 & 0.123 & 0.057 & 0.347 \\
+VAR & Student-\(t\) & 0.161 & 0.571 & 0.881 & 5.010 \\
+VAR & Mixture & 0.221 & 0.431 & 1.210 & 3.973 \\
+VAR & Heteroskedastic & 0.340 & 1.097 & 0.534 & 0.815 \\
+\midrule
+RNN & Gaussian & 0.156 & 0.170 & 0.152 & 0.612 \\
+RNN & Student-\(t\) & 0.283 & 0.393 & 0.826 & 5.262 \\
+RNN & Mixture & 0.218 & 0.687 & 1.260 & 3.846 \\
+RNN & Heteroskedastic & 0.302 & 1.080 & 0.628 & 0.482 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Moment recovery is strongest under the Gaussian DGP, where errors remain uniformly small. Recovery becomes more challenging under the Student-\(t\) and mixture settings. Notably, skewness errors are consistently larger than mean and covariance errors, indicating that asymmetry remains the most difficult characteristic for the current diffusion model to learn.
+
+\subsection*{Quantile Recovery}
+
+Moment diagnostics alone do not fully characterize distributional recovery. Consequently, quantile recovery was evaluated across the lower tail, center, and upper tail of the residual distributions.
+
+\begin{table}[H]
+\centering
+\caption{Absolute quantile recovery errors.}
+\label{tab:diffusion_quantile_errors}
+\small
+\begin{tabular}{llccccc}
+\toprule
+Forecast & DGP & 0.01 & 0.05 & 0.50 & 0.95 & 0.99 \\
+\midrule
+VAR & Gaussian & 0.114 & 0.023 & 0.026 & 0.087 & 0.093 \\
+VAR & Student-\(t\) & 0.577 & 0.172 & 0.061 & 0.083 & 0.415 \\
+VAR & Mixture & 0.422 & 0.153 & 0.102 & 0.263 & 0.908 \\
+VAR & Heteroskedastic & 0.527 & 0.557 & 0.062 & 0.289 & 0.222 \\
+\midrule
+RNN & Gaussian & 0.184 & 0.112 & 0.069 & 0.032 & 0.047 \\
+RNN & Student-\(t\) & 0.362 & 0.285 & 0.105 & 0.190 & 0.496 \\
+RNN & Mixture & 0.369 & 0.121 & 0.073 & 0.337 & 0.905 \\
+RNN & Heteroskedastic & 0.912 & 0.819 & 0.075 & 0.088 & 0.265 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Quantile recovery is strongest near the center of the distribution. Median errors remain relatively small across all DGPs, typically below \(0.10\). Recovery deteriorates toward the extremes, particularly for the mixture and Student-\(t\) settings. The largest discrepancies occur at the \(0.99\) quantile, where errors approach \(0.90\) in the mixture DGPs.
+
+\subsection*{Visual Assessment}
+
+Figures~\ref{fig:diffusion_histograms} and~\ref{fig:diffusion_qq} provide visual confirmation of the numerical diagnostics.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{diffusion_histogram_grid_4x4.png}
+    \caption{Histogram comparison between empirical residuals and diffusion-generated innovations.}
+    \label{fig:diffusion_histograms}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{diffusion_qq_grid_4x4.png}
+    \caption{Q--Q comparisons between empirical residuals and diffusion-generated innovations.}
+    \label{fig:diffusion_qq}
+\end{figure}
+
+The histogram comparisons demonstrate that the diffusion model captures substantially more non-Gaussian structure than a Gaussian approximation. The Q--Q plots further show that the model reproduces much of the heavy-tail behavior present in the Student-\(t\), mixture, and heteroskedastic residual distributions. Deviations remain in the most extreme quantiles, but the overall shape of the residual distributions is preserved.
+
+Overall, these results provide evidence that diffusion models can successfully learn complex innovation distributions directly from residuals. The model reproduces heavy-tailed behavior remarkably well and captures many important distributional characteristics of the empirical residuals. However, recovery of skewness and extreme-tail quantiles remains imperfect, indicating that further improvements in architecture, training procedures, or conditioning strategies may be required before diffusion innovations consistently outperform strong classical alternatives such as bootstrap resampling.
+
+% ==================================================
+\section{Forecast Generation}
+
+Probabilistic forecasts were generated by combining each forecasting backbone (VAR and RNN) with each innovation model (Gaussian, Bootstrap, Student-$t$, and Diffusion). For each experiment, 250 forecast trajectories were simulated over a horizon of 40 periods. The resulting forecast distributions were subsequently used for calibration assessment and probabilistic scoring.
+
+Figure~\ref{fig:heteroskedastic_forecasts} shows representative forecasts under the heteroskedastic DGP. The blue curve denotes the final portion of the training data, the orange curve denotes the realized future observations, and the dashed green curve denotes the forecast median. Shaded regions correspond to the 90\% prediction interval.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{heteroskedastic_forecast_grid_var_rnn.png}
+    \caption{Representative forecast trajectories under the heteroskedastic DGP for all forecasting and innovation model combinations.}
+    \label{fig:heteroskedastic_forecasts}
+\end{figure}
+
+Across all innovation models, the forecast medians remain broadly similar. The primary differences arise through the width and shape of the predictive intervals. This observation suggests that the innovation model primarily affects uncertainty quantification rather than the conditional mean forecast.
+
+Table~\ref{tab:forecast_widths} reports the average 90\% prediction interval widths across all forecasting and innovation model combinations.
+
+\begin{table}[H]
+\centering
+\caption{Average forecast interval widths.}
+\label{tab:forecast_widths}
+\small
+\begin{tabular}{llllr}
+\toprule
+Forecast Model & DGP & Innovation Model & Avg. Width \\
+\midrule
+VAR & Gaussian & Gaussian & 3.694 \\
+VAR & Gaussian & Bootstrap & 3.693 \\
+VAR & Gaussian & Student-$t$ & 3.588 \\
+VAR & Gaussian & Diffusion & 3.786 \\
+\midrule
+VAR & Student-$t$ & Gaussian & 5.221 \\
+VAR & Student-$t$ & Bootstrap & 4.963 \\
+VAR & Student-$t$ & Student-$t$ & 5.057 \\
+VAR & Student-$t$ & Diffusion & 5.019 \\
+\midrule
+VAR & Mixture & Gaussian & 5.240 \\
+VAR & Mixture & Bootstrap & 4.788 \\
+VAR & Mixture & Student-$t$ & 5.106 \\
+VAR & Mixture & Diffusion & 4.773 \\
+\midrule
+VAR & Heteroskedastic & Gaussian & 6.514 \\
+VAR & Heteroskedastic & Bootstrap & 6.899 \\
+VAR & Heteroskedastic & Student-$t$ & 6.305 \\
+VAR & Heteroskedastic & Diffusion & 7.470 \\
+\midrule
+RNN & Gaussian & Gaussian & 3.052 \\
+RNN & Gaussian & Bootstrap & 3.034 \\
+RNN & Gaussian & Student-$t$ & 2.940 \\
+RNN & Gaussian & Diffusion & 2.934 \\
+\midrule
+RNN & Student-$t$ & Gaussian & 4.504 \\
+RNN & Student-$t$ & Bootstrap & 4.055 \\
+RNN & Student-$t$ & Student-$t$ & 4.338 \\
+RNN & Student-$t$ & Diffusion & 3.946 \\
+\midrule
+RNN & Mixture & Gaussian & 4.668 \\
+RNN & Mixture & Bootstrap & 3.983 \\
+RNN & Mixture & Student-$t$ & 4.466 \\
+RNN & Mixture & Diffusion & 4.212 \\
+\midrule
+RNN & Heteroskedastic & Gaussian & 6.006 \\
+RNN & Heteroskedastic & Bootstrap & 6.657 \\
+RNN & Heteroskedastic & Student-$t$ & 5.714 \\
+RNN & Heteroskedastic & Diffusion & 6.244 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several patterns emerge from Table~\ref{tab:forecast_widths}. Under the Gaussian DGP, all innovation models produce similar uncertainty estimates. Under the Student-$t$ and mixture DGPs, diffusion generally produces interval widths comparable to the bootstrap and Student-$t$ specifications. Under the heteroskedastic DGP, diffusion produces the widest intervals for the VAR model, suggesting that the learned innovation distribution captures additional variability beyond that represented by the parametric alternatives.
+
+To identify the strongest forecasting configurations, Table~\ref{tab:best_forecast_models} summarizes the best-performing forecasting and innovation combinations across the major probabilistic forecasting metrics.
+
+\begin{table}[H]
+\centering
+\caption{Best-performing forecasting and innovation model combinations.}
+\label{tab:best_forecast_models}
+\small
+\begin{tabular}{llll}
+\toprule
+DGP & Metric & Best Forecast Model & Best Innovation Model \\
+\midrule
+Gaussian & Energy Score & VAR & Gaussian \\
+Gaussian & CRPS & VAR & Student-$t$ \\
+Gaussian & Interval Score & VAR & Bootstrap \\
+Gaussian & ECE & VAR & Gaussian \\
+Gaussian & PIT Deviation & VAR & Gaussian \\
+\midrule
+Student-$t$ & Energy Score & VAR & Bootstrap \\
+Student-$t$ & CRPS & VAR & Bootstrap \\
+Student-$t$ & Interval Score & VAR & Student-$t$ \\
+Student-$t$ & ECE & VAR & Bootstrap \\
+Student-$t$ & PIT Deviation & RNN & Diffusion \\
+\midrule
+Mixture & Energy Score & VAR & Gaussian \\
+Mixture & CRPS & VAR & Gaussian \\
+Mixture & Interval Score & VAR & Gaussian \\
+Mixture & ECE & VAR & Gaussian \\
+Mixture & PIT Deviation & VAR & Gaussian \\
+\midrule
+Heteroskedastic & Energy Score & RNN & Bootstrap \\
+Heteroskedastic & CRPS & RNN & Bootstrap \\
+Heteroskedastic & Interval Score & RNN & Bootstrap \\
+Heteroskedastic & ECE & VAR & Bootstrap \\
+Heteroskedastic & PIT Deviation & RNN & Diffusion \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Overall, the forecast generation experiments suggest that the innovation model primarily affects uncertainty propagation rather than the forecast median. Classical innovation models remain highly competitive, particularly under Gaussian and mixture innovations. Diffusion innovations do not consistently dominate traditional alternatives, but they remain competitive in heavy-tailed and heteroskedastic settings. In particular, diffusion innovations achieve the best PIT deviation under both the Student-$t$ and heteroskedastic DGPs, indicating that the learned innovation distribution may improve certain aspects of forecast calibration despite not consistently improving forecast accuracy metrics. The next section investigates these calibration properties in greater detail.
+% ==================================================
+\section{Calibration Evaluation}
+
+The primary objective of this thesis is to determine whether flexible innovation models improve probabilistic forecast calibration under innovation misspecification. To evaluate calibration quality, forecasts were assessed using empirical coverage, expected calibration error (ECE), probability integral transform (PIT) deviation, CRPS, energy score, interval score, and absolute coverage error.
+
+Table~\ref{tab:calibration_results} summarizes the complete set of calibration results across all forecasting and innovation model combinations. Because the forecasting experiments involve both model misspecification and innovation misspecification, calibration metrics provide a more informative assessment than point forecast accuracy alone.
+
+\begin{table}[H]
+\centering
+\caption{Headline calibration results. Lower values are preferred for ECE, PIT deviation, CRPS, energy score, interval score, and coverage error.}
+\label{tab:calibration_results}
+\small
+\begin{tabular}{lllrrrr}
+\toprule
+DGP & Forecast & Innovation & Coverage & ECE & PIT Dev. & CRPS \\
+\midrule
+Gaussian & VAR & Gaussian & 0.850 & 0.031 & 0.018 & 0.716 \\
+Gaussian & VAR & Bootstrap & 0.875 & 0.042 & 0.023 & 0.719 \\
+Gaussian & VAR & Student-$t$ & 0.833 & 0.053 & 0.023 & 0.716 \\
+Gaussian & VAR & Diffusion & 0.858 & 0.044 & 0.023 & 0.733 \\
+\midrule
+Student-$t$ & VAR & Gaussian & 0.900 & 0.028 & 0.038 & 0.869 \\
+Student-$t$ & VAR & Bootstrap & 0.892 & 0.008 & 0.028 & 0.836 \\
+Student-$t$ & VAR & Student-$t$ & 0.900 & 0.011 & 0.038 & 0.866 \\
+Student-$t$ & VAR & Diffusion & 0.900 & 0.011 & 0.037 & 0.861 \\
+\midrule
+Mixture & VAR & Gaussian & 0.842 & 0.047 & 0.033 & 1.153 \\
+Mixture & VAR & Bootstrap & 0.825 & 0.111 & 0.050 & 1.169 \\
+Mixture & VAR & Student-$t$ & 0.817 & 0.094 & 0.038 & 1.159 \\
+Mixture & VAR & Diffusion & 0.783 & 0.106 & 0.042 & 1.165 \\
+\midrule
+Heteroskedastic & VAR & Gaussian & 0.867 & 0.078 & 0.058 & 1.145 \\
+Heteroskedastic & VAR & Bootstrap & 0.867 & 0.042 & 0.037 & 1.133 \\
+Heteroskedastic & VAR & Student-$t$ & 0.833 & 0.081 & 0.052 & 1.129 \\
+Heteroskedastic & VAR & Diffusion & 0.867 & 0.047 & 0.045 & 1.141 \\
+\midrule
+Gaussian & RNN & Gaussian & 0.758 & 0.142 & 0.040 & 0.751 \\
+Gaussian & RNN & Bootstrap & 0.750 & 0.167 & 0.038 & 0.756 \\
+Gaussian & RNN & Student-$t$ & 0.725 & 0.203 & 0.052 & 0.764 \\
+Gaussian & RNN & Diffusion & 0.750 & 0.178 & 0.050 & 0.770 \\
+\midrule
+Student-$t$ & RNN & Gaussian & 0.867 & 0.028 & 0.032 & 0.871 \\
+Student-$t$ & RNN & Bootstrap & 0.817 & 0.086 & 0.037 & 0.858 \\
+Student-$t$ & RNN & Student-$t$ & 0.850 & 0.056 & 0.032 & 0.871 \\
+Student-$t$ & RNN & Diffusion & 0.842 & 0.069 & 0.027 & 0.846 \\
+\midrule
+Mixture & RNN & Gaussian & 0.783 & 0.119 & 0.037 & 1.203 \\
+Mixture & RNN & Bootstrap & 0.692 & 0.194 & 0.045 & 1.232 \\
+Mixture & RNN & Student-$t$ & 0.767 & 0.153 & 0.042 & 1.216 \\
+Mixture & RNN & Diffusion & 0.742 & 0.172 & 0.043 & 1.220 \\
+\midrule
+Heteroskedastic & RNN & Gaussian & 0.808 & 0.089 & 0.052 & 1.123 \\
+Heteroskedastic & RNN & Bootstrap & 0.875 & 0.053 & 0.023 & 1.104 \\
+Heteroskedastic & RNN & Student-$t$ & 0.808 & 0.081 & 0.040 & 1.116 \\
+Heteroskedastic & RNN & Diffusion & 0.833 & 0.047 & 0.020 & 1.108 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several important patterns emerge from these results. Forecast backbone choice has a substantial effect on calibration quality. Across nearly all DGPs, the VAR forecasts achieve lower ECE values and smaller coverage errors than the corresponding RNN forecasts. The Gaussian DGP illustrates this clearly: the VAR-Gaussian model attains an ECE of 0.031, while the RNN-Gaussian model achieves only 0.142.
+
+No innovation model uniformly dominates across all settings. Under the Student-$t$ DGP, bootstrap innovations provide the strongest calibration performance for the VAR forecasts, achieving the lowest ECE (0.008), lowest PIT deviation (0.028), lowest energy score (1.680), and lowest CRPS (0.836). Diffusion innovations remain competitive in this setting, matching nominal coverage (0.900) while achieving slightly better CRPS than the Student-$t$ innovation model.
+
+The mixture DGP proves to be the most challenging environment. For both VAR and RNN forecasts, Gaussian innovations outperform the more flexible alternatives across nearly all calibration metrics. Neither diffusion nor bootstrap innovations improve calibration in this setting, suggesting that the current diffusion implementation does not yet recover the multimodal innovation structure sufficiently well to improve forecast calibration.
+
+To summarize the strongest configurations, Table~\ref{tab:headline_rankings} reports the best innovation model for each forecasting backbone and DGP.
+
+\begin{table}[H]
+\centering
+\caption{Best innovation model by forecasting backbone and DGP.}
+\label{tab:headline_rankings}
+\small
+\begin{tabular}{llll}
+\toprule
+Forecast & DGP & Best Calibration Result & Innovation Model \\
+\midrule
+VAR & Gaussian & Lowest ECE / PIT & Gaussian \\
+VAR & Student-$t$ & Lowest ECE / PIT & Bootstrap \\
+VAR & Mixture & Lowest ECE / PIT & Gaussian \\
+VAR & Heteroskedastic & Lowest ECE / PIT & Bootstrap \\
+\midrule
+RNN & Gaussian & Lowest ECE & Gaussian \\
+RNN & Student-$t$ & Lowest PIT Deviation & Diffusion \\
+RNN & Mixture & Lowest ECE / PIT & Gaussian \\
+RNN & Heteroskedastic & Lowest ECE / PIT & Diffusion \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The headline rankings reveal the primary contribution of diffusion innovations in the current experiment. Diffusion does not consistently improve scoring-rule performance such as CRPS or energy score. However, diffusion achieves the best PIT deviation under the Student-$t$ and heteroskedastic DGPs when paired with the RNN forecasting model. In particular, the heteroskedastic RNN-diffusion combination achieves the lowest PIT deviation observed in the entire experiment (0.020) while simultaneously attaining the lowest ECE among the RNN heteroskedastic models (0.047).
+
+The calibration results provide partial evidence in favor of flexible innovation learning. Diffusion innovations do not uniformly outperform classical alternatives, and simple bootstrap innovations remain highly competitive under heavy-tailed settings. Nevertheless, diffusion innovations demonstrate advantages in several calibration-oriented metrics, particularly under heteroskedastic and heavy-tailed innovation regimes. These findings suggest that learned innovation distributions may improve probabilistic calibration when the forecasting backbone is already misspecified, although additional work is needed before diffusion models consistently dominate simpler innovation specifications.
+
+
+% ==================================================
+\section{Future Work}
+
+The current results also suggest several directions for further investigation.
+
+The first direction focuses on robustness through controlled contamination experiments. Rather than changing the underlying forecasting model, the innovation process itself can be systematically perturbed through variance inflation, tail amplification, and outlier contamination. These experiments would provide a controlled mechanism for studying how forecast calibration degrades as the innovation distribution moves away from the training distribution. Such analyses would help identify the regimes in which flexible innovation models provide the greatest benefit relative to classical alternatives.
+
+The second direction introduces a more formal robustness framework through Wasserstein perturbation analysis. Instead of applying specific contamination mechanisms, residual distributions can be perturbed within Wasserstein balls of increasing radius. Forecasts generated under these perturbed innovation distributions can then be evaluated using calibration metrics such as coverage, ECE, PIT deviation, CRPS, and energy score. This approach would provide a principled measure of calibration sensitivity and could help quantify the robustness of different innovation models under distributional shift.
+
+The third direction investigates calibration-aware residual learning. The current diffusion model is trained solely to recover the empirical residual distribution. However, accurate residual recovery does not necessarily imply improved forecast calibration. An alternative approach would incorporate calibration objectives directly into the innovation learning process, encouraging generated innovations to improve downstream probabilistic forecast calibration rather than only matching residual distribution characteristics. Such a framework would more directly align the innovation model with the primary objective of the thesis.
+
+Collectively, these three directions move beyond distributional recovery and focus more directly on understanding when flexible innovation models materially improve probabilistic forecast calibration under innovation misspecification.
+
+\section{Conclusion}
+
+The numerical experiments presented in this report provide an initial assessment of the proposed innovation-learning framework. Several conclusions can be drawn from the results obtained thus far.
+
+Cclassical innovation models establish strong baselines. In particular, bootstrap resampling consistently demonstrates excellent distributional recovery and remains highly competitive across many forecasting and calibration metrics. These results indicate that any improvement obtained by more flexible innovation models must be evaluated relative to already strong nonparametric alternatives.
+
+The diffusion model successfully learns complex residual distributions and reproduces many important distributional characteristics, particularly heavy-tail behavior. However, improvements in residual recovery do not automatically translate into uniform improvements in forecast calibration. While diffusion innovations achieve favorable results in several heavy-tailed and heteroskedastic settings, they do not consistently dominate classical approaches across all metrics and data-generating processes.
+
+The next phase of the project should focus on identifying the conditions under which flexible innovation learning produces meaningful calibration improvements. Rather than asking whether diffusion models can recover residual distributions, the emphasis shifts toward understanding when such flexibility materially improves calibration, how robust those improvements are under distributional shift, and whether innovation models can be trained directly toward calibration-oriented objectives.
+
+
+\end{document}

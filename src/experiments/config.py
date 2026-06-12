@@ -26,7 +26,7 @@ class ExperimentConfig:
     forecast_model: str = "VAR"
 
     lags: int = 1
-    n_train: int = 300
+    n_train: int = 600
     horizon: int = 40
     n_paths: int = 250
 
