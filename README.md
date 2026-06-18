@@ -4,8 +4,6 @@ This repository hosts the development of `innovcal`, a probabilistic forecasting
 
 **Author:** Jonathan Ma
 
-**Advisor:** Dr. Luhao Zhang
-
 ---
 
 ## Overview
