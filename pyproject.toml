@@ -21,8 +21,15 @@ dependencies = [
     "statsmodels",
 ]
 
-[tool.setuptools]
-packages = ["src"]
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["innovcal*"]
 
 [tool.ruff]
 line-length = 88
@@ -34,4 +41,4 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src"]

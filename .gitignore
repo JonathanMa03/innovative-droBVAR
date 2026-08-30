@@ -253,8 +253,7 @@ logs/
 *.ckpt
 
 # Local notebooks / OS junk
-.DS_Store
-*/.DS_Store
+**/.DS_Store
 
 # Environment files
 .env
