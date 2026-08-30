@@ -14,7 +14,7 @@ A supporting methodological question is:
 
 > Under what residual structures and distributional shifts does diffusion-based innovation modeling provide meaningful improvements over Gaussian, Student-t, and empirical alternatives?
 
-The project does not assume that diffusion is always the best innovation model. Diffusion-Innovation VAR (DI-VAR) is evaluated as one candidate inside a broader and interpretable forecasting framework.
+The project does not assume that diffusion is always the best innovation model. Diffusion-Innovation VAR (DI-VAR) is evaluated as an unconditional generative baseline. Its extension, Conditional Diffusion-Innovation VAR (CDI-VAR), conditions standardized joint innovations on recent residual history and a causal volatility state, then applies regularized adaptive calibration to the completed VAR forecast distribution.
 
 ## Framework
 
@@ -22,7 +22,7 @@ The methodology has four layers:
 
 1. **Predictable dynamics:** A vector autoregression (VAR) models lagged interactions among a small set of related financial assets.
 2. **Joint residual uncertainty:** Competing innovation models learn the multivariate distribution of rolling VAR forecast errors.
-3. **Calibration:** Probabilistic forecasts are assessed for marginal, joint, and tail reliability as well as sharpness.
+3. **Calibration:** Probabilistic forecasts are assessed for marginal, joint, and tail reliability as well as sharpness. CDI-VAR additionally updates bounded forecast-scale corrections using only outcomes observable at each rolling origin.
 4. **Stress testing:** Innovation distributions are perturbed to measure forecast and portfolio-risk degradation under plausible distributional shifts.
 
 For a return vector $y_t \in \mathbb{R}^K$,
@@ -56,8 +56,49 @@ The conditional-mean model is held fixed wherever possible so differences can be
 | Student-t-VAR | Multivariate Student-t | Parametric heavy-tail benchmark |
 | Bootstrap-VAR | Joint or block residual resampling | Empirical nonparametric benchmark |
 | DI-VAR | Diffusion-generated residual vectors | Flexible generative candidate |
+| CDI-VAR | Volatility-aware conditional diffusion with adaptive calibration | Proposed conditional and calibrated model |
 
 Residual vectors are modeled jointly to preserve contemporaneous cross-asset dependence. A block bootstrap can additionally preserve short-range temporal dependence.
+
+## CDI-VAR specification
+
+CDI-VAR preserves a deliberately interpretable decomposition:
+
+1. A common VAR estimates the conditional mean.
+2. A causal EWMA recursion estimates marginal residual scale.
+3. A conditional diffusion model generates standardized joint shocks given recent standardized residuals and current log volatility.
+4. Raw shocks update the latent residual and volatility state.
+5. A separate calibration layer rescales completed VAR forecast deviations by lead time.
+
+For residual component $u_{t,j}$, the causal volatility state is
+
+$$
+v_{t+1,j}=\lambda v_{t,j}+(1-\lambda)u_{t,j}^{2},
+\qquad
+z_{t,j}=\frac{u_{t,j}}{\sqrt{v_{t,j}}},
+$$
+
+where $v_t$ is known before observing $u_t$. The diffusion context concatenates the most recent standardized residual vectors with normalized log volatility. During simulation, calibration never feeds back into this recursion: the state is updated using raw conditional draws, and calibration is applied only after those draws have been propagated through the VAR.
+
+Calibration uses genuine rolling VAR forecast outcomes from a chronologically reserved block. Raw scale estimates are shrunk toward one and bounded before deployment. At test origin $o$, adaptive updates use only forecast outcomes whose realization dates are no later than $o$. The current research configuration is:
+
+| Parameter | Default | Interpretation |
+|---|---:|---|
+| VAR lags | 1 | Conditional-mean lag order |
+| Conditional residual lags | 5 | Standardized residual vectors supplied as diffusion context |
+| EWMA span | 60 | Causal marginal-volatility memory |
+| Diffusion steps | 50 in experiments | Reverse-process discretization |
+| Hidden dimension | 128 | Conditional denoising-network width |
+| Training epochs | 300 maximum | Early stopping selects the checkpoint |
+| Validation fraction | 0.15 | Chronological checkpoint-selection block |
+| Calibration fraction | 0.15 | Later chronological calibration block |
+| Calibration anchors | 1, 5, 20 days | Explicit forecast leads calibrated |
+| Calibration paths | 32 | Monte Carlo paths per calibration origin |
+| Shrinkage | 0.5 | Pulls raw multipliers halfway toward one |
+| Multiplier bounds | $[0.8,1.25]$ | Prevents unstable widening or sharpening |
+| Adaptive window | 12 origins | Most recent available forecast cases used online |
+
+These are frozen experimental settings, not universally optimal financial constants. Any later tuning must occur inside a new training/calibration design rather than against reported test results.
 
 ## Evaluation
 
@@ -115,6 +156,7 @@ src/innovcal/
 ├── data/           # simulation, loading, and preprocessing
 ├── vector_ar/      # VAR fitting, diagnostics, stability, and forecasting
 ├── di_var/         # high-level DI-VAR workflow and rolling residuals
+├── cdi_var/        # conditional diffusion, EWMA state, and adaptive calibration
 ├── innovations/    # Gaussian, bootstrap, and Student-t residual models
 ├── diffusion/      # diffusion training and sampling
 ├── forecasting/    # recursive trajectories and Monte Carlo forecasts
@@ -127,35 +169,36 @@ src/innovcal/
 
 ## Immediate research priorities
 
-1. Add a reproducible market-data pipeline and define the asset-selection rationale.
-2. Replace purely in-sample residual fitting with rolling out-of-sample residual construction.
-3. Establish a strict training/calibration/test protocol.
-4. Compare innovation models using identical VAR fits and forecast origins.
-5. Add multivariate and portfolio-level calibration diagnostics.
-6. Complete stress experiments for volatility, dependence, and downside-tail shifts.
-7. Repeat simulation and empirical evaluations across seeds and time windows.
-8. Report uncertainty, computational cost, failure cases, and simple-model baselines.
+1. Freeze the current CDI-VAR specification before further test-period analysis.
+2. Complete CDI-VAR ablations for conditioning, volatility, and calibration.
+3. Add nested walk-forward evaluation across historical regimes.
+4. Quantify paired score uncertainty with dependence-aware confidence intervals.
+5. Extend controlled simulations with persistent volatility, residual dependence, and regime shifts.
+6. Report computational cost, calibration trajectories, and failure cases.
 
 ## Notebook workflow
 
 The notebooks are intentionally thin and should be run in order:
 
 1. `00_environment_and_tests.ipynb`
-2. `01_financial_data.ipynb`
-3. `02_var_and_residuals.ipynb`
-4. `03_classical_innovations.ipynb`
-5. `04_di_var.ipynb`
-6. `05_calibration_and_portfolio.ipynb`
-7. `06_stress_tests.ipynb`
-8. `07_simulation_validation.ipynb`
-9. `08_results.ipynb`
+2. `01a_financial_data.ipynb` (retained demo; not part of the empirical run)
+3. `01b_real_world_data.ipynb`
+4. `02_var_and_residuals.ipynb`
+5. `03_classical_innovations.ipynb`
+6. `04_di_var.ipynb`
+7. `04a_cdi_var.ipynb`
+8. `05_calibration_and_portfolio.ipynb`
+9. `06_stress_tests.ipynb`
+10. `07_simulation_validation.ipynb`
+11. `08_results.ipynb`
+12. `09_repeated_results.ipynb`
 
-Intermediate artifacts are written to `results/notebook_cache/`. If no real adjusted-price CSV is present at `data/raw/market_prices.csv`, the data notebook uses a clearly labeled deterministic demo dataset so the complete workflow can be tested. Demo results are not empirical evidence.
+Intermediate artifacts are written to `results/notebook_cache/`. The market-data notebook downloads AAPL, JPM, XOM, and WMT adjusted closes for 2007--2025, saves the cleaned price panel to `data/processed/market_prices.csv`, and saves the canonical log-return panel to `data/processed/financial_returns.csv`.
 
 ## Future direction
 
-The framework supports later work on distributional shift. Future extensions can monitor rolling residual distributions, detect changes in covariance or tail dependence, distinguish innovation shift from changing conditional-mean dynamics, and adapt the innovation model or robustness radius online. A further extension would replace the unconditional innovation law $p(u)$ with a market-state-dependent law $p(u_{t+1}\mid\mathcal{F}_t)$.
+The framework supports later work on distributional shift. Future extensions can monitor rolling residual distributions, detect changes in covariance or tail dependence, distinguish innovation shift from changing conditional-mean dynamics, and adapt the innovation model or robustness radius online. A central implemented extension already replaces the unconditional innovation law $p(u)$ with the CDI-VAR law $p_{\theta}(z_{t+1}\mid z_{t-L+1:t},v_{t+1})$. Future work will examine richer state variables and formal shift detection.
 
 ## Status
 
-This repository is under active research and development. The existing implementation provides simulation, VAR and probabilistic RNN components, classical and diffusion innovation models, recursive forecasting, calibration metrics, and initial stress-testing utilities. The financial data study, repeated rolling evaluation, and final robustness analysis remain to be completed.
+This repository is under active research and development. It currently provides the real-data pipeline, leakage-aware rolling residual construction, classical innovation models, DI-VAR, CDI-VAR, rolling-origin evaluation, exact portfolio transformations, repeated-seed experiments, and shifted-realization stress tests. Ablation, nested regime evaluation, statistical comparison, and final thesis synthesis remain to be completed.

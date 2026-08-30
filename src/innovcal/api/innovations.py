@@ -10,7 +10,13 @@ from innovcal.innovations.gaussian import (
 
 from innovcal.innovations.bootstrap import (
     fit_bootstrap_innovation_model,
+    fit_block_bootstrap_innovation_model,
     sample_from_bootstrap_model,
+    sample_from_block_bootstrap_model,
+)
+from innovcal.innovations.volatility import (
+    fit_volatility_bootstrap_model,
+    sample_from_volatility_bootstrap_model,
 )
 
 from innovcal.innovations.student_t import (
@@ -19,6 +25,7 @@ from innovcal.innovations.student_t import (
 )
 
 from innovcal.innovations.residuals import standardize_residuals
+from innovcal.cdi_var.innovation import fit_cdi_innovation_model
 
 from innovcal.diffusion.networks import ResidualDenoisingMLP
 from innovcal.diffusion.schedules import make_ddpm_schedule
@@ -81,6 +88,18 @@ def fit_innovations(
     elif method == "bootstrap":
         result = _fit_bootstrap(residuals)
 
+    elif method == "block_bootstrap":
+        result = _fit_block_bootstrap(
+            residuals,
+            block_length=kwargs.get("block_length", 10),
+        )
+
+    elif method == "volatility_bootstrap":
+        result = _fit_volatility_bootstrap(
+            residuals,
+            span=kwargs.get("volatility_span", 60),
+        )
+
     elif method == "student_t":
         result = _fit_student_t(
             residuals,
@@ -100,11 +119,39 @@ def fit_innovations(
             batch_size=kwargs.get("batch_size", 64),
             device=kwargs.get("device", "cpu"),
             verbose=kwargs.get("verbose", True),
+            validation_fraction=kwargs.get("validation_fraction", 0.2),
+            early_stopping_patience=kwargs.get("early_stopping_patience", 50),
+            seed=kwargs.get("seed", 123),
+        )
+
+    elif method == "cdi_var":
+        result = fit_cdi_innovation_model(
+            residuals,
+            context_lags=kwargs.get("context_lags", 5),
+            volatility_span=kwargs.get("volatility_span", 60),
+            validation_fraction=kwargs.get("validation_fraction", 0.2),
+            calibration_fraction=kwargs.get("calibration_fraction", 0.15),
+            calibration_horizons=kwargs.get("calibration_horizons", (1, 5, 20)),
+            calibration_paths=kwargs.get("calibration_paths", 32),
+            calibration_shrinkage=kwargs.get("calibration_shrinkage", 0.5),
+            calibration_bounds=kwargs.get("calibration_bounds", (0.8, 1.25)),
+            adaptive_calibration_window=kwargs.get("adaptive_calibration_window", 12),
+            timesteps=kwargs.get("timesteps", 100),
+            epochs=kwargs.get("epochs", 300),
+            lr=kwargs.get("lr", 5e-4),
+            hidden_dim=kwargs.get("hidden_dim", 128),
+            time_embedding_dim=kwargs.get("time_embedding_dim", 32),
+            batch_size=kwargs.get("batch_size", 64),
+            early_stopping_patience=kwargs.get("early_stopping_patience", 40),
+            device=kwargs.get("device", "cpu"),
+            seed=kwargs.get("seed", 123),
+            verbose=kwargs.get("verbose", False),
         )
 
     else:
         raise ValueError(
-            "method must be one of: gaussian, bootstrap, student_t, diffusion."
+            "method must be one of: gaussian, bootstrap, block_bootstrap, "
+            "volatility_bootstrap, student_t, diffusion, cdi_var."
         )
 
     if save and output_dir is not None:
@@ -200,6 +247,40 @@ def _fit_bootstrap(
     }
 
 
+def _fit_block_bootstrap(
+    residuals: np.ndarray,
+    block_length: int,
+) -> dict:
+    model = fit_block_bootstrap_innovation_model(residuals, block_length)
+
+    def sample_fn(n_paths: int, horizon: int, seed: int | None = None) -> np.ndarray:
+        return sample_from_block_bootstrap_model(model, n_paths, horizon, seed)
+
+    return {
+        "method": "block_bootstrap",
+        "model": model,
+        "block_length": block_length,
+        "sample_fn": sample_fn,
+    }
+
+
+def _fit_volatility_bootstrap(
+    residuals: np.ndarray,
+    span: int,
+) -> dict:
+    model = fit_volatility_bootstrap_model(residuals, span=span)
+
+    def sample_fn(n_paths: int, horizon: int, seed: int | None = None) -> np.ndarray:
+        return sample_from_volatility_bootstrap_model(model, n_paths, horizon, seed)
+
+    return {
+        "method": "volatility_bootstrap",
+        "model": model,
+        "volatility_span": span,
+        "sample_fn": sample_fn,
+    }
+
+
 def _fit_student_t(
     residuals: np.ndarray,
     df: float = 5.0,
@@ -241,11 +322,26 @@ def _fit_diffusion(
     batch_size: int = 64,
     device: str | torch.device = "cpu",
     verbose: bool = True,
+    validation_fraction: float = 0.2,
+    early_stopping_patience: int | None = 50,
+    seed: int = 123,
 ) -> dict:
-    residuals_std, mean, std = standardize_residuals(
-        residuals
-    )
+    if not 0.0 <= validation_fraction < 0.5:
+        raise ValueError("validation_fraction must lie in [0, 0.5).")
+    split_index = len(residuals)
+    if validation_fraction > 0:
+        split_index = int(len(residuals) * (1.0 - validation_fraction))
+        if split_index < 2 or split_index >= len(residuals):
+            raise ValueError("Not enough residuals for diffusion validation.")
+    training_residuals = residuals[:split_index]
+    validation_residuals = residuals[split_index:]
+    residuals_std, mean, std = standardize_residuals(training_residuals)
+    validation_std = None
+    if len(validation_residuals):
+        validation_std = (validation_residuals - mean) / std
 
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     device = torch.device(device)
 
     schedule = make_ddpm_schedule(
@@ -273,6 +369,8 @@ def _fit_diffusion(
         lr=lr,
         device=device,
         verbose=verbose,
+        validation_residuals=validation_std,
+        early_stopping_patience=early_stopping_patience,
     )
 
     def sample_fn(
@@ -305,6 +403,8 @@ def _fit_diffusion(
         "timesteps": timesteps,
         "beta_start": beta_start,
         "beta_end": beta_end,
+        "validation_fraction": validation_fraction,
+        "seed": seed,
         "sample_fn": sample_fn,
     }
 

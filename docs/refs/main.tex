@@ -40,7 +40,7 @@ and Stress Testing under Distributional Change}
 \begin{abstract}
 Reliable financial forecasts require more than accurate conditional means. They also require predictive distributions that represent joint uncertainty, tail risk, and the possibility that market behavior changes after a model is fitted. This study develops an interpretable framework for calibrated and robust multivariate financial forecasting. A vector autoregression (VAR) captures predictable interactions among a small set of related asset returns, while competing joint residual models represent the uncertainty left unexplained by the VAR. Gaussian, multivariate Student-$t$, empirical bootstrap, and diffusion-based innovation specifications are compared within the same conditional-mean model. Sampled innovations are propagated recursively to construct probabilistic return, price, and portfolio paths.
 
-The framework evaluates whether forecast probabilities are credible before treating flexibility as evidence of robustness. Marginal, multivariate, and tail calibration are assessed alongside proper scoring rules and sharpness. Innovation-based stress tests then alter volatility, dependence, downside tails, and contamination to measure how forecast calibration and portfolio-risk estimates deteriorate under distributional change. Controlled simulations establish behavior under known innovation laws, while a rolling financial case study evaluates external validity. Diffusion-Innovation VAR (DI-VAR) is treated as a flexible candidate rather than a presumed solution: the objective is to determine which residual models produce reliable forecasts, under which conditions, and at what cost. The methodology provides a foundation for future work on residual-based shift detection, adaptive uncertainty models, and distributionally robust forecasting.
+The framework evaluates whether forecast probabilities are credible before treating flexibility as evidence of robustness. Marginal, multivariate, and tail calibration are assessed alongside proper scoring rules and sharpness. Innovation-based stress tests then alter volatility, dependence, downside tails, and contamination to measure how forecast calibration and portfolio-risk estimates deteriorate under distributional change. Controlled simulations establish behavior under known innovation laws, while a rolling financial case study evaluates external validity. Diffusion-Innovation VAR (DI-VAR) is treated as an unconditional generative baseline. The proposed Conditional Diffusion-Innovation VAR (CDI-VAR) instead models standardized joint innovations conditionally on recent residual history and a causal volatility state, then applies bounded, regularized, and adaptively updated calibration to completed VAR forecast distributions. The objective is to determine which residual models produce reliable forecasts, under which conditions, and at what cost.
 \end{abstract}
 
 \newpage
@@ -57,6 +57,8 @@ This study separates conditional-mean modeling from uncertainty modeling. The VA
 
 Diffusion models are included as a flexible method for learning joint residual distributions. The resulting Diffusion-Innovation VAR (DI-VAR) does not replace the VAR or directly model prices; it replaces the conventional parametric innovation law with samples from a learned denoising process. DI-VAR is compared with simpler Gaussian, Student-$t$, and empirical bootstrap alternatives. This hierarchy is essential because low-dimensional financial residuals may not contain enough information to justify a complex generative model.
 
+This thesis also develops Conditional Diffusion-Innovation VAR (CDI-VAR). CDI-VAR retains the transparent VAR conditional mean but addresses two limitations of unconditional residual generation: volatility clustering and state-dependent residual behavior. It causally standardizes rolling VAR errors, conditions a joint diffusion law on recent standardized errors and current volatility, and recalibrates final forecast deviations using only previously observable forecast outcomes. Calibration is deliberately separated from state evolution so a widening correction cannot recursively manufacture higher future volatility.
+
 Robustness is distinguished from flexibility. A model that closely reproduces historical residuals may still fail when volatility, dependence, or tail behavior changes. The framework therefore evaluates nominal calibration first and subsequently exposes every innovation model to the same controlled stresses. Robustness is measured by the rate at which calibration, proper scores, and portfolio-risk estimates deteriorate as the forecast environment moves away from its reference distribution.
 
 The central research question is:
@@ -72,6 +74,10 @@ The methodological sub-question is:
 \end{quote}
 
 The contribution is a modular methodology connecting interpretable dynamics, joint uncertainty modeling, calibration, and distributional stress. The study remains informative if a simpler innovation model is preferable.
+
+\section{Literature Review}
+
+\textbf{Stub for thesis development.} This section will position the work relative to: multivariate autoregressive forecasting; probabilistic forecast calibration and proper scoring rules; conditional heteroskedasticity and volatility standardization; residual and block bootstrap methods; diffusion and score-based generative models for time series; online and conformal calibration; and distributionally robust financial forecasting. The final review will distinguish unconditional generative innovation models from conditional and adaptively calibrated predictive distributions, and will state precisely which methodological gap CDI-VAR is intended to address. Citations and claims will be added only after a systematic source review.
 
 \section{Conceptual Framework}
 
@@ -159,6 +165,114 @@ A network $\epsilon_{\theta}(u_s,s)$ is trained through
 \end{equation}
 The learned reverse process generates joint innovations without imposing a Gaussian or elliptical form. Because the target dimension is small, model capacity is deliberately limited and performance is reported relative to computational cost and sample size.
 
+\subsection{Conditional Diffusion-Innovation VAR}
+
+CDI-VAR extends DI-VAR by separating each innovation into a predictable scale and a conditionally generated standardized shock. Let $\widehat u_t\in\R^K$ be a rolling one-step VAR forecast error. For component $j$, define
+\begin{align}
+    v_{t,j} &= \lambda v_{t-1,j}+(1-\lambda)\widehat u_{t-1,j}^{,2},
+    \label{eq:cdi-ewma}\\
+    \widehat z_{t,j} &= \frac{\widehat u_{t,j}}
+    {\sqrt{\max(v_{t,j},\delta^2)}},
+    \label{eq:cdi-standardize}
+\end{align}
+where $\lambda\in(0,1)$ is determined by the EWMA span and $\delta>0$ is a numerical floor. The indexing in \eqref{eq:cdi-ewma} is essential: $v_t$ depends only on residuals observed before $t$, so standardization does not leak the magnitude of $\widehat u_t$ into its own scale.
+
+For residual-context length $L$, let
+\begin{equation}
+    q_t=\left(
+        \operatorname{vec}(\widehat z_{t-L:t-1}),
+        \frac{\log\sqrt{v_t}-\mu_{\log \sigma}}
+        {s_{\log \sigma}}
+    \right)\in\R^{LK+K},
+    \label{eq:cdi-context}
+\end{equation}
+where $\mu_{\log\sigma}$ and $s_{\log\sigma}$ are estimated from training observations only. Thus $q_t$ contains recent standardized shock directions and the current marginal volatility regime while remaining observable before $\widehat u_t$ occurs.
+
+Conditional diffusion is fitted to $z_0=\widehat z_t$. At diffusion index $s$,
+\begin{equation}
+    z_s=\sqrt{\bar\alpha_s}z_0+
+    \sqrt{1-\bar\alpha_s}\epsilon,
+    \qquad \epsilon\sim\mathcal N(0,I_K),
+\end{equation}
+and the conditional denoising network minimizes
+\begin{equation}
+    \mathcal L_{\mathrm{CDI}}(\theta)
+    =\mathbb E\left[
+        \left\|\epsilon-epsilon_\theta(z_s,s,q_t)\right\|_2^2
+    \right].
+    \label{eq:cdi-loss}
+\end{equation}
+DI-VAR estimates an unconditional law $p_\theta(u)$, whereas CDI-VAR estimates
+\begin{equation}
+    p_\theta\!\left(z_t\mid z_{t-L:t-1},v_t\right).
+\end{equation}
+
+For simulation path $m$, a raw standardized draw $\widetilde z_{t+h}^{(m)}$ is transformed into
+\begin{equation}
+    \widetilde u_{t+h}^{(m)}
+    =\operatorname{diag}\!\left(\sqrt{v_{t+h}^{(m)}}\right)
+    \widetilde z_{t+h}^{(m)},
+    \label{eq:cdi-unscale}
+\end{equation}
+and the latent volatility state evolves according to
+\begin{equation}
+    v_{t+h+1,j}^{(m)}
+    =\lambda v_{t+h,j}^{(m)}
+    +(1-\lambda)\left(\widetilde u_{t+h,j}^{(m)}\right)^2.
+    \label{eq:cdi-state-update}
+\end{equation}
+The raw standardized draw is appended to the residual context. This recursion allows volatility clustering and conditional joint shock geometry to affect uncertainty without replacing the interpretable VAR mean.
+
+\subsubsection{Chronological estimation}
+
+Rolling residuals are partitioned into three non-overlapping chronological blocks. The earliest block trains $\theta$; the next block selects the checkpoint by validation denoising loss; and the final block estimates forecast calibration. Test observations are excluded from all three operations.
+
+\subsubsection{Forecast-level scale calibration}
+
+Calibration is fitted to complete VAR forecasts rather than isolated residuals. At reserved calibration origin $o$, the VAR is refitted using observations strictly before $o$, raw CDI-VAR paths $Y_{o,h}^{(m)}$ are generated, and realized $y_{o+h}$ is recorded. For
+\begin{equation}
+    \mathcal T_c(x)=\widetilde x+c(x-\widetilde x),
+    \label{eq:scale-transform}
+\end{equation}
+where $\widetilde x$ is the Monte Carlo median, the raw multiplier for nominal coverage $1-\alpha$ is
+\begin{equation}
+    c_h^{\mathrm{raw}}
+    \in\arg\min_{c\in\mathcal G}
+    \left|\widehat{\operatorname{Cov}}_h(c)-(1-\alpha)\right|.
+    \label{eq:raw-calibration}
+\end{equation}
+Here $\mathcal G$ is a fixed grid and $\widehat{\operatorname{Cov}}_h(c)$ is empirical marginal coverage at lead $h$. Ties favor the multiplier closest to one.
+
+Small calibration samples and regime changes can make \eqref{eq:raw-calibration} unstable. The deployed anchor is therefore
+\begin{equation}
+    c_h^{\mathrm{reg}}
+    =\Pi_{[a,b]}\left(1+\rho(c_h^{\mathrm{raw}}-1)\right),
+    \label{eq:regularized-calibration}
+\end{equation}
+where $\rho\in[0,1]$ is shrinkage strength, $[a,b]$ contains one, and $\Pi$ denotes projection onto that interval.
+
+\subsubsection{Online adaptive calibration}
+
+At rolling test origin $o$, each anchor uses at most the $W$ most recent completed cases
+\begin{equation}
+    \mathcal A_{o,h}=\{r<o:r+h\leq o\}.
+    \label{eq:available-cases}
+\end{equation}
+The condition $r+h\leq o$ prevents look-ahead bias even for overlapping horizons. The raw online estimate from these cases is transformed by \eqref{eq:regularized-calibration}; before any outcome is available, the reserved-calibration estimate is the fallback.
+
+For anchor set $\mathcal H=\{1,5,20\}$, the most recent lower anchor is carried forward between anchors. Final paths are
+\begin{equation}
+    Y_{o,h}^{(m),\mathrm{cal}}
+    =\widetilde Y_{o,h}
+    +c_{o,h}\left(Y_{o,h}^{(m)}-\widetilde Y_{o,h}\right).
+    \label{eq:final-calibration}
+\end{equation}
+The median is unchanged. Crucially, \eqref{eq:final-calibration} is applied only after raw innovations have passed through the VAR. Calibrated deviations are never inserted into \eqref{eq:cdi-context} or \eqref{eq:cdi-state-update}; this no-feedback condition prevents calibration from mechanically inflating subsequent volatility.
+
+\subsubsection{Mathematical justification}
+
+The construction has four motivations. Causal scale standardization reduces nonstationarity in the diffusion target while leaving volatility forecastable through an explicit state. Conditioning permits joint shock behavior to change with recent residual direction and volatility. Forecast-level calibration targets the predictive object actually evaluated rather than assuming residual calibration implies multi-step calibration. Finally, shrinkage and bounded online adaptation trade responsiveness against finite-sample variance while preserving the forecasting filtration. These choices do not guarantee calibration under arbitrary distribution shift; they define an auditable mechanism whose success can be measured at repeated origins.
+
 \subsection{Recursive probabilistic forecasts}
 
 For innovation model $j$, draw $M$ future innovation paths. Each is propagated recursively through the fitted VAR:
@@ -174,7 +288,14 @@ Return paths can be mapped back to prices through
     P_{t+h}^{(m,j)}=P_t\odot
     \exp\left(\sum_{r=1}^{h}y_{t+r}^{(m,j)}\right),
 \end{equation}
-where $\odot$ denotes componentwise multiplication. For portfolio weights $w$, every simulation also produces a portfolio-return or wealth path, allowing errors to be evaluated in decision-relevant units.
+where $\odot$ denotes componentwise multiplication. Because $y_t$ contains asset log returns, portfolio arithmetic is performed after conversion to simple returns. For weights $w$ satisfying $\sum_jw_j=1$,
+\begin{align}
+    R_{t,j}^{(m)} &= \exp(y_{t,j}^{(m)})-1,\\
+    R_{p,t}^{(m)} &= \sum_{j=1}^K w_jR_{t,j}^{(m)},\\
+    W_{p,t+h}^{(m)} &= W_{p,t}
+    \prod_{r=1}^{h}\left(1+R_{p,t+r}^{(m)}\right).
+\end{align}
+This avoids the generally incorrect operation of weighting log returns and treating the result as an exact portfolio return.
 
 \section{Calibration and Forecast Evaluation}
 
@@ -194,7 +315,7 @@ Financial usefulness is assessed through lower-tail coverage, Value at Risk exce
 
 \subsection{Comparative protocol}
 
-Each innovation method uses the same VAR fits, forecast origins, horizons, and Monte Carlo sample counts. Results include mean performance, uncertainty across origins and random seeds, computational cost, and failure cases. DI-VAR is considered useful only when calibration or robustness gains are material relative to simpler alternatives.
+Each innovation method uses the same VAR fits, forecast origins, horizons, and Monte Carlo sample counts. Results include mean performance, uncertainty across origins and random seeds, computational cost, and failure cases. DI-VAR and CDI-VAR are considered useful only when calibration, sharpness, or robustness gains are material relative to simpler alternatives.
 
 \section{Robustness and Distributional Stress}
 
@@ -250,25 +371,17 @@ The primary application uses approximately four liquid and economically related 
 
 Evaluation uses rolling forecast origins. At each origin, model fitting and innovation estimation use only prior observations. Hyperparameters are selected using training and calibration data, after which forecasts are evaluated on chronologically later outcomes. Multiple market regimes and test windows are included where sample size permits.
 
+\subsection{Implemented CDI-VAR configuration}
+
+The frozen primary configuration uses a VAR(1), $L=5$ conditional residual lags, a 60-observation EWMA span, 50 diffusion steps, a hidden dimension of 128, and at most 300 epochs with chronological early stopping. Within the rolling residual sample, 15 percent is reserved for checkpoint validation and a later 15 percent for calibration. Calibration anchors are $\{1,5,20\}$ trading days with 32 Monte Carlo paths per reserved calibration origin. Raw multipliers are regularized with $\rho=0.5$, projected to $[0.8,1.25]$, and updated from at most $W=12$ recently completed forecast cases. The primary evaluation uses 250 paths at 47 rolling origins separated by 20 observations. These values define the reported experiment; they are not asserted to be universally optimal.
+
 \subsection{Controlled simulation study}
 
 Simulations complement the financial study by providing known innovation laws. Stable multivariate VAR systems are generated under Gaussian, Student-$t$, mixture, and heteroskedastic regimes. Every innovation model is evaluated under every regime and across repeated random seeds. These experiments test recovery of known moments, quantiles, dependence, and forecast coverage; the financial case study evaluates external validity.
 
 \subsection{Ablation studies}
 
-The planned ablations include:
-
-\begin{itemize}
-    \item joint versus independently fitted innovation models;
-    \item in-sample versus rolling out-of-sample residuals;
-    \item raw versus volatility-standardized residuals;
-    \item ordinary versus block residual bootstrap;
-    \item residual sample size and diffusion capacity;
-    \item nominal versus stressed evaluation;
-    \item asset-level versus portfolio-level calibration.
-\end{itemize}
-
-These comparisons identify whether apparent gains arise from diffusion, joint modeling, volatility treatment, or experimental leakage.
+\textbf{Stub for thesis development.} The ablation study will isolate the contribution of each CDI-VAR component using the same rolling origins, random seeds, VAR fits, and evaluation metrics. At minimum it will compare unconditional DI-VAR, residual-context conditioning without dynamic volatility, volatility conditioning without residual history, uncalibrated CDI-VAR, static regularized calibration, and the full adaptively calibrated CDI-VAR. The final section will state the estimands, experimental controls, paired uncertainty procedure, and results after the ablation experiments are frozen and run. No component-level causal claim is made before that analysis.
 
 \section{Hypotheses}
 
@@ -277,6 +390,8 @@ These comparisons identify whether apparent gains arise from diffusion, joint mo
     \item Student-$t$-VAR improves tail calibration when heavy tails dominate but dependence remains relatively simple.
     \item Bootstrap-VAR is competitive in low dimensions when sufficient representative residuals are available.
     \item DI-VAR is most valuable when joint residual structure is non-elliptical or multimodal and the calibration sample supports flexible estimation.
+    \item CDI-VAR improves sharpness when recent standardized residuals and volatility contain information about the conditional innovation law.
+    \item Regularized adaptive calibration is more stable than unrestricted static calibration when forecast-error scale changes across regimes.
     \item No unconditional innovation model remains calibrated under every conditional volatility or regime shift.
     \item Dependence shifts can degrade portfolio-risk calibration even when marginal asset coverage remains acceptable.
 \end{enumerate}
@@ -304,17 +419,13 @@ The project contributes a common evaluation framework rather than a preferred al
 
 The residual construction provides a direct path toward distributional-shift research. A monitoring system can compare recent residual windows with the reference distribution using Wasserstein distances, covariance and tail-dependence changes, two-sample statistics, or rolling calibration errors. Subsequent work can distinguish innovation shift from changes in VAR dynamics and determine whether to update the innovation model, refit the conditional mean, or widen robust uncertainty sets.
 
-A further extension replaces the unconditional innovation law with
-\begin{equation}
-    p_{\theta}(u_{t+1}\mid\F_t,z_t),
-\end{equation}
-where $z_t$ may encode recent volatility, drawdown, liquidity, or a latent regime. This conditional formulation could support adaptive probabilistic forecasting, but it requires more data and separate evaluation of conditional calibration. The current framework supplies the baseline against which that complexity should be judged.
+CDI-VAR implements one conditional law using recent standardized residuals and an EWMA volatility state. Future work can enlarge the information set with drawdown, liquidity, macroeconomic variables, or latent regimes, but each added state variable requires a nested evaluation design and an ablation establishing incremental value.
 
 \section{Conclusion}
 
 This study reframes multivariate financial forecasting as a sequence of distinct questions. A VAR asks what can be predicted from recent cross-asset behavior. A joint residual model asks what uncertainty remains. Calibration asks whether that uncertainty is credible. Stress testing asks how quickly credibility and financial risk estimates deteriorate when the innovation distribution changes.
 
-Within this framework, DI-VAR is a flexible candidate rather than a guaranteed solution. Comparing it with Gaussian, Student-$t$, and bootstrap alternatives makes the analysis interpretable, falsifiable, and useful even when simpler models prevail. The methodology connects probabilistic forecasting with distributional shift and robust risk evaluation while preserving clear boundaries between predictive dynamics, uncertainty representation, and stress response.
+Within this framework, DI-VAR is a flexible unconditional candidate and CDI-VAR is its volatility-aware, conditionally generated, explicitly calibrated extension. Comparing both with Gaussian, Student-$t$, and bootstrap alternatives makes the analysis interpretable, falsifiable, and useful even when simpler models prevail. The methodology connects probabilistic forecasting with distributional shift and robust risk evaluation while preserving clear boundaries between predictive dynamics, uncertainty representation, calibration, and stress response.
 
 \appendix
 

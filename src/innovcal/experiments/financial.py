@@ -11,6 +11,10 @@ from innovcal.data.financial import ChronologicalSplit, chronological_split
 from innovcal.di_var.residuals import rolling_var_residuals
 from innovcal.forecasting.monte_carlo import simulate_forecast_paths
 from innovcal.vector_ar.fit import fit_var_ols
+from innovcal.cdi_var.calibration import (
+    apply_forecast_calibration,
+    fit_rolling_var_forecast_calibration,
+)
 
 
 @dataclass(frozen=True)
@@ -34,7 +38,10 @@ def run_financial_experiment(
     n_paths: int = 1000,
     seed: int = 123,
     student_t_df: float = 5.0,
+    block_length: int = 10,
+    volatility_span: int = 60,
     diffusion_options: dict | None = None,
+    cdi_var_options: dict | None = None,
 ) -> FinancialExperimentResult:
     """Run one leakage-aware VAR innovation comparison.
 
@@ -68,14 +75,35 @@ def run_financial_experiment(
         options: dict = {}
         if method == "student_t":
             options["df"] = student_t_df
+        elif method == "block_bootstrap":
+            options["block_length"] = block_length
+        elif method == "volatility_bootstrap":
+            options["volatility_span"] = volatility_span
         elif method == "diffusion":
             options.update(diffusion_options or {})
+            options.setdefault("seed", seed)
+        elif method == "cdi_var":
+            options.update(cdi_var_options or {})
+            options.setdefault("seed", seed)
 
         innovation_model = fit_innovations(
             residuals=residuals,
             method=method,
             **options,
         )
+        if method == "cdi_var":
+            fit_rolling_var_forecast_calibration(
+                innovation_model,
+                calibration_sample,
+                residuals,
+                initial_window=len(split.train),
+                lags=lags,
+                horizons=tuple(options.get("calibration_horizons", (1, 5, 20))),
+                n_paths=options.get("calibration_paths", 32),
+                seed=seed,
+                shrinkage=options.get("calibration_shrinkage", 0.5),
+                bounds=tuple(options.get("calibration_bounds", (0.8, 1.25))),
+            )
         innovations = sample_innovations(
             innovation_model,
             n_paths=n_paths,
@@ -89,6 +117,10 @@ def run_financial_experiment(
             lags=lags,
             include_intercept=True,
         )
+        if method == "cdi_var":
+            paths = apply_forecast_calibration(
+                paths, innovation_model["calibration_multipliers"]
+            )
         innovation_models[method] = innovation_model
         forecasts[method] = {
             "forecast_paths": paths,

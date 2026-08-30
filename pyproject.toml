@@ -26,6 +26,9 @@ dev = [
     "pytest",
     "ruff",
 ]
+market = [
+    "yfinance>=0.2.54",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

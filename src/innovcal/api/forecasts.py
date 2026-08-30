@@ -6,6 +6,7 @@ from innovcal.api.innovations import sample_innovations
 from innovcal.forecasting.monte_carlo import simulate_forecast_paths
 from innovcal.deep_ar.forecast import forecast_rnn_paths
 from innovcal.experiments.artifacts import save_array_npz, save_json
+from innovcal.cdi_var.calibration import apply_forecast_calibration
 
 
 def generate_forecasts(
@@ -122,6 +123,10 @@ def _generate_var_forecasts(
         lags=fitted_model["lags"],
         include_intercept=fitted_model.get("include_intercept", True),
     )
+    if innovation_model.get("method") == "cdi_var":
+        forecast_paths = apply_forecast_calibration(
+            forecast_paths, innovation_model["calibration_multipliers"]
+        )
 
     return {
         "forecast_paths": forecast_paths,
