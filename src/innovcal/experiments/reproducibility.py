@@ -76,6 +76,7 @@ def run_frequentist_seed_comparison(
     forecast_seed: int = 20_606,
     n_forecast_samples: int = 500,
     device: str = "cpu",
+    models: tuple[str, ...] = ("RNN", "CA-RNN", "CA-RNN sequential"),
 ) -> MultiSeedResult:
     """Refit RNN, CA-RNN, and sequential CA-RNN over matched seeds.
 
@@ -99,11 +100,17 @@ def run_frequentist_seed_comparison(
         iter(DataLoader(test, batch_size=len(test), shuffle=False))
     )
     target = target_tensor.numpy()
-    specifications = {
+    available = {
         "RNN": (0.0, 0.0),
         "CA-RNN": (lambda_cal, 0.0),
         "CA-RNN sequential": (lambda_cal, lambda_seq),
     }
+    if len(set(models)) != len(models) or not models:
+        raise ValueError("models must contain distinct supported specifications")
+    unknown = set(models) - set(available)
+    if unknown:
+        raise ValueError(f"unsupported models: {sorted(unknown)}")
+    specifications = {name: available[name] for name in models}
     rows: list[dict[str, float | int | str]] = []
     histories = {}
     retained = {name: [] for name in specifications}
