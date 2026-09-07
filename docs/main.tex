@@ -1,0 +1,1123 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{assumption}[definition]{Assumption}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\F}{\mathcal{F}}
+\newcommand{\D}{\mathcal{D}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\KL}{\operatorname{KL}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\CA}{\mathrm{CA}}
+\newcommand{\ind}{\mathbf{1}}
+
+\title{Calibration-Aware Recurrent Neural Networks\\
+for Multivariate Probabilistic Forecasting\\
+under Distribution Shift}
+\author{Jonathan Ma}
+\date{Working paper\\\today}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\maketitle
+
+\begin{abstract}
+Probabilistic forecasts are useful only when their stated uncertainty is credible.
+Likelihood-trained recurrent neural networks may be miscalibrated, while Bayesian
+model averaging is not guaranteed to remain calibrated when the likelihood, prior,
+or conditional dynamics are misspecified. This paper develops the
+Calibration-Aware Recurrent Neural Network (CA-RNN), adapting the
+calibration-aware frequentist and Bayesian learning framework of Huang, Park, and
+Simeone to continuous multivariate forecasting. The proposed training criterion
+augments joint negative log likelihood with a differentiable discrepancy between
+projected probability integral transforms (PITs) and the uniform distribution. A
+sequential extension additionally penalizes lagged dependence in the projected
+PIT sequence. The empirical design compares RNN, Bayesian RNN, CA-RNN, and
+calibration-aware Bayesian RNN, and then extends the comparison to model
+misspecification and distribution shift. In the four-asset application,
+sequential CA-RNN reduces projected-PIT calibration error consistently across
+optimization seeds and chronological market regimes, but does not uniformly
+improve point or proper-score accuracy. The results identify a regime-dependent
+calibration--accuracy tradeoff rather than universal dominance.
+\end{abstract}
+
+\tableofcontents
+\clearpage
+\hypersetup{pageanchor=true}
+
+\section{Introduction}
+
+\subsection{Motivation}
+
+A point forecast reports one possible future; a probabilistic forecast reports a
+distribution of possible futures. The latter is operationally meaningful only if
+events assigned probability $\alpha$ occur at approximately rate $\alpha$, while
+the distribution remains sufficiently sharp to discriminate among outcomes.
+Modern neural forecasters can optimize likelihood successfully without achieving
+reliable finite-sample calibration. Bayesian learning represents parameter
+uncertainty, but its calibration guarantees depend on idealized assumptions about
+the likelihood, prior, posterior computation, and data-generating mechanism.
+
+Huang, Park, and Simeone propose calibration-aware Bayesian neural networks
+(CA-BNNs), combining a data-dependent calibration regularizer with the
+data-independent KL regularizer of variational Bayesian learning
+\cite{huang2024cabl}. Their experiments compare frequentist, Bayesian,
+calibration-aware frequentist, and calibration-aware Bayesian classifiers; vary
+the calibration weight; and report expected calibration error and reliability
+diagrams. Their conclusion identifies evaluation under distribution shift as a
+direction for future work. This paper transfers that methodological template to
+continuous multivariate sequential prediction and makes misspecification and
+distribution shift a central part of the evaluation.
+
+\subsection{Research questions}
+
+The primary research question is:
+
+\begin{quote}
+Can calibration-aware training improve multivariate probabilistic RNN forecasts,
+and does that improvement persist under model misspecification and distribution
+shift without an unacceptable loss of sharpness or predictive accuracy?
+\end{quote}
+
+The supporting questions are:
+\begin{enumerate}[label=RQ\arabic*.]
+    \item How does the calibration weight affect projected calibration, proper
+    predictive scores, sharpness, and point accuracy?
+    \item Does calibration-aware Bayesian learning behave differently from its
+    frequentist counterpart for dependent sequential data?
+    \item Does penalizing serial dependence in projected PIT values improve
+    sequential forecast adequacy beyond marginal PIT uniformity?
+    \item How do the four model classes deteriorate under changes in volatility,
+    dependence, tail behavior, conditional dynamics, and structural regime?
+\end{enumerate}
+
+\subsection{Contributions}
+
+The contributions are methodological and empirical:
+\begin{enumerate}
+    \item a continuous-outcome analogue of calibration-aware neural training based
+    on differentiable projected PIT discrepancies;
+    \item an extension targeting temporal dependence in forecast PIT sequences;
+    \item a variational Bayesian recurrent formulation combining calibration and
+    KL regularization;
+    \item a matched four-model experiment that parallels
+    \cite{huang2024cabl}; and
+    \item a controlled study of calibration degradation under misspecification and
+    distribution shift, including a multivariate financial application.
+\end{enumerate}
+
+\subsection{Scope and non-claims}
+
+Finite projected calibration is weaker than complete multivariate distributional
+calibration. Calibration of a finite test set is also not a guarantee of
+conditional calibration at every history. We therefore avoid claims
+that a small collection of projections proves joint correctness. The proposed
+regularizer is an explicit, diagnostically aligned training objective whose value
+must be established empirically with proper scores and out-of-sample tests.
+
+\section{Related Work}
+
+\subsection{Calibration-aware Bayesian learning}
+
+The organizing reference is \cite{huang2024cabl}. It distinguishes
+data-dependent calibration regularization from the data-independent prior
+regularization used by variational Bayesian inference. Its CA-FNN objective adds a
+differentiable approximation of expected calibration error to cross-entropy, and
+its CA-BNN objective places the same calibration penalty inside the variational
+expectation while retaining a KL penalty. The paper uses Gaussian variational
+parameters and the reparameterization trick, and its main comparison comprises
+FNN, BNN, CA-FNN, and CA-BNN. The reported experiments emphasize calibration-weight
+sweeps and reliability diagrams.
+
+\subsection{Broader literature review to be completed}
+
+This section is intentionally a structured stub. It will cover:
+\begin{enumerate}
+    \item probabilistic calibration, auto-calibration, and PIT diagnostics;
+    \item proper scoring rules and calibration--sharpness decompositions;
+    \item multivariate calibration, copula diagnostics, and projection methods;
+    \item recurrent probabilistic forecasting and Bayesian recurrent networks;
+    \item variational inference under misspecification;
+    \item calibration under temporal dependence and distribution shift; and
+    \item probabilistic forecasting and risk evaluation in financial time series.
+\end{enumerate}
+
+Only sources actually reviewed will be added to the bibliography. The local
+literature archive is maintained in \texttt{docs/refs/}.
+
+\section{Forecasting Setup and Calibration}
+
+\subsection{Sequential prediction problem}
+
+Let $(Y_t)_{t=1}^T$ be an adapted stochastic process with
+$Y_t\in\R^d$ and filtration
+$\F_t=\sigma(Y_1,\ldots,Y_t)$. Given a history length $H$, define
+$X_t=(Y_{t-H+1},\ldots,Y_t)$. The task is to estimate a conditional predictive
+distribution
+\[
+    P_t(\cdot)=\Pp(Y_{t+1}\in\cdot\mid\F_t)
+\]
+with a model $P_{\theta,t}$. Training, validation, and test blocks are ordered
+chronologically. Standardization parameters are estimated on the training block
+only.
+
+\subsection{Joint Gaussian predictive head}
+
+For the initial specification, the predictive law is
+\begin{equation}
+Y_{t+1}\mid\F_t,\theta
+\sim \N_d\!\left(\mu_{\theta,t},\Sigma_{\theta,t}\right),
+\qquad
+\Sigma_{\theta,t}=L_{\theta,t}L_{\theta,t}^{\mathsf T}.
+\label{eq:predictive}
+\end{equation}
+The network outputs the $d$ components of $\mu_{\theta,t}$ and the
+$d(d+1)/2$ lower-triangular entries of $L_{\theta,t}$. An unconstrained diagonal
+output $s_{t,j}$ is transformed as
+\[
+    L_{t,jj}=\operatorname{softplus}(s_{t,j})+\varepsilon,
+    \qquad \varepsilon>0.
+\]
+
+\begin{proposition}[Validity of the predictive covariance]
+For every network output, $\Sigma_{\theta,t}=L_{\theta,t}L_{\theta,t}^{\mathsf T}$
+is symmetric positive definite.
+\end{proposition}
+
+\begin{proof}
+Symmetry follows from transposition. Since every diagonal entry of the triangular
+matrix $L_{\theta,t}$ is strictly positive, $L_{\theta,t}$ is nonsingular. Hence,
+for any nonzero $x\in\R^d$,
+\[
+x^{\mathsf T}\Sigma_{\theta,t}x
+=x^{\mathsf T}L_{\theta,t}L_{\theta,t}^{\mathsf T}x
+=\|L_{\theta,t}^{\mathsf T}x\|_2^2>0.
+\]
+Thus $\Sigma_{\theta,t}$ is positive definite.
+\end{proof}
+
+\subsection{Negative log likelihood}
+
+For an index set $I$, the mean joint Gaussian negative log likelihood is
+\begin{align}
+\mathcal L_{\mathrm{NLL}}(\theta;I)
+&=-\frac{1}{|I|}\sum_{t\in I}
+\log p_\theta(Y_{t+1}\mid X_t) \\
+&=\frac{1}{2|I|}\sum_{t\in I}
+\left[
+d\log(2\pi)+2\sum_{j=1}^d\log L_{t,jj}
++e_t^{\mathsf T}\Sigma_{\theta,t}^{-1}e_t
+\right],
+\label{eq:nll}
+\end{align}
+where $e_t=Y_{t+1}-\mu_{\theta,t}$. Computation uses triangular solves rather
+than an explicit matrix inverse.
+
+\begin{proposition}[Strict propriety of the population log score]
+Let $P_0(\cdot\mid\F_t)$ have density $p_0$ and let $p$ be any candidate
+conditional density with common support. Then
+\[
+\E_{P_0}[-\log p(Y_{t+1}\mid\F_t)]
+-\E_{P_0}[-\log p_0(Y_{t+1}\mid\F_t)]
+=\E\!\left[\KL(P_0(\cdot\mid\F_t)\|P(\cdot\mid\F_t))\right]\geq0.
+\]
+Equality holds only when the conditional densities agree almost surely.
+\end{proposition}
+
+\begin{proof}
+Condition on $\F_t$, subtract the two expected log scores, and recognize the
+conditional KL divergence. Nonnegativity follows from Gibbs' inequality. Taking
+expectations over $\F_t$ proves the result.
+\end{proof}
+
+This proposition explains why the calibration penalty must supplement rather than
+replace a proper score: calibration alone can admit uninformative forecasts.
+
+\subsection{Projected probability integral transforms}
+
+Fix unit vectors $a_1,\ldots,a_R\in\R^d$. In the experiments they comprise the
+$d$ coordinate directions, one equal-weight direction, and four random unit
+directions fixed by a documented seed. Define
+\begin{equation}
+U_{t,r}=F_{\theta,t,r}(a_r^{\mathsf T}Y_{t+1}),
+\label{eq:pit}
+\end{equation}
+where $F_{\theta,t,r}$ is the predictive CDF of $a_r^{\mathsf T}Y_{t+1}$.
+
+\begin{proposition}[Projected Gaussian law]
+Under \eqref{eq:predictive},
+\[
+a_r^{\mathsf T}Y_{t+1}\mid\F_t,\theta
+\sim \N\!\left(a_r^{\mathsf T}\mu_{\theta,t},
+a_r^{\mathsf T}\Sigma_{\theta,t}a_r\right),
+\]
+and therefore
+\[
+U_{t,r}=\Phi\!\left(
+\frac{a_r^{\mathsf T}(Y_{t+1}-\mu_{\theta,t})}
+{\sqrt{a_r^{\mathsf T}\Sigma_{\theta,t}a_r}}
+\right).
+\]
+\end{proposition}
+
+\begin{proof}
+A linear transformation of a multivariate Gaussian is Gaussian. Its mean and
+variance follow from linearity of expectation and the covariance transformation
+rule. Applying its CDF gives the displayed PIT.
+\end{proof}
+
+\begin{theorem}[Sequential PIT property]
+Suppose $F_{0,t,r}$ is the true, continuous conditional CDF of
+$a_r^{\mathsf T}Y_{t+1}$ given $\F_t$. Then
+$U_{t,r}=F_{0,t,r}(a_r^{\mathsf T}Y_{t+1})$ is uniformly distributed conditional
+on $\F_t$. For a fixed $r$, the sequence $(U_{t,r})_t$ is independent and
+$\operatorname{Uniform}(0,1)$.
+\end{theorem}
+
+\begin{proof}
+For $u\in[0,1]$, continuity and the conditional probability integral transform
+give
+\[
+\Pp(U_{t,r}\leq u\mid\F_t)=u.
+\]
+Thus $U_{t,r}$ is conditionally uniform and its conditional law does not depend on
+$\F_t$. For times $t_1<\cdots<t_m$, iterated conditioning yields
+\begin{align*}
+\Pp(U_{t_1,r}\leq u_1,\ldots,U_{t_m,r}\leq u_m)
+&=\E\left[
+\ind_{\{U_{t_1,r}\leq u_1,\ldots,U_{t_{m-1},r}\leq u_{m-1}\}}
+\Pp(U_{t_m,r}\leq u_m\mid\F_{t_m})
+\right]\\
+&=u_m\Pp(U_{t_1,r}\leq u_1,\ldots,U_{t_{m-1},r}\leq u_{m-1}).
+\end{align*}
+Induction gives $\prod_{j=1}^m u_j$, proving independence and uniformity.
+\end{proof}
+
+\begin{remark}
+Uniformity for finitely many $a_r$ is necessary but not sufficient for equality of
+multivariate distributions. If all one-dimensional projections agree, the
+Cram\'er--Wold device identifies the joint distribution; a finite projection set
+only provides a tractable approximation and diagnostic.
+\end{remark}
+
+Training uses the analytic Gaussian PIT above. Out-of-sample evaluation instead
+uses the common sample-rank approximation
+\[
+ \widehat U_{t,r}=\frac{\sum_{s=1}^{S}
+ \ind\{a_r^{\mathsf T}Y_{t+1}^{(s)}<a_r^{\mathsf T}Y_{t+1}\}+1/2}{S+1},
+\]
+with $S=500$ predictive draws. This supports the same diagnostic for deterministic
+Gaussian forecasts and Bayesian posterior-predictive mixtures, at the cost of
+finite-simulation error.
+
+\section{Calibration-Aware RNN Methodology}
+
+\subsection{Recurrent architecture}
+
+For a single-layer GRU, with elementwise product $\odot$,
+\begin{align*}
+r_t&=\sigma(W_{ir}Y_t+b_{ir}+W_{hr}h_{t-1}+b_{hr}),\\
+z_t&=\sigma(W_{iz}Y_t+b_{iz}+W_{hz}h_{t-1}+b_{hz}),\\
+n_t&=\tanh(W_{in}Y_t+b_{in}+r_t\odot(W_{hn}h_{t-1}+b_{hn})),\\
+h_t&=n_t+z_t\odot(h_{t-1}-n_t).
+\end{align*}
+Linear heads map the final hidden state to $\mu_{\theta,t}$ and the unconstrained
+entries of $L_{\theta,t}$.
+
+\subsection{Differentiable projected calibration loss}
+
+Let $q_g=g/(G+1)$ for $g=1,\ldots,G$. The empirical CDF of PIT values is
+nondifferentiable in model parameters because it uses indicators. Replace the
+indicator $\ind\{U_{t,r}\leq q_g\}$ by
+\[
+s_\tau(q_g-U_{t,r})
+=\sigma\!\left(\frac{q_g-U_{t,r}}{\tau}\right),\qquad \tau>0.
+\]
+For a consecutive training batch $B$, define
+\begin{equation}
+\mathcal L_{\mathrm{cal}}(\theta;B)
+=\frac{1}{GR}\sum_{g=1}^G\sum_{r=1}^R
+\left[
+\frac{1}{|B|}\sum_{t\in B}s_\tau(q_g-U_{t,r})-q_g
+\right]^2.
+\label{eq:cal-loss}
+\end{equation}
+This is a grid approximation to an integrated squared CDF discrepancy, analogous
+in purpose---but not in definition---to the differentiable AECE used for
+classification in \cite{huang2024cabl}.
+
+\begin{proposition}[Differentiability]
+If the network outputs are differentiable in $\theta$ and
+$a_r^{\mathsf T}\Sigma_{\theta,t}a_r>0$, then
+$\mathcal L_{\mathrm{cal}}(\theta;B)$ is differentiable in $\theta$.
+\end{proposition}
+
+\begin{proof}
+The Cholesky parameterization, affine projection, positive square root, Gaussian
+CDF, logistic smoother, finite sums, and squaring operations are differentiable on
+the stated domain. Their composition is therefore differentiable.
+\end{proof}
+
+\begin{proposition}[Zero-temperature limit]
+Fix PIT values such that $U_{t,r}\neq q_g$ for every $t,r,g$. As
+$\tau\downarrow0$, \eqref{eq:cal-loss} converges to the squared grid discrepancy
+formed with the empirical PIT CDF.
+\end{proposition}
+
+\begin{proof}
+For nonzero $x$, $\sigma(x/\tau)\to\ind\{x>0\}$ as $\tau\downarrow0$. Every sum
+is finite, so the limit passes through the averages and squares. The exclusion of
+ties removes the ambiguous boundary value.
+\end{proof}
+
+\subsection{Sequential calibration loss}
+
+PIT uniformity does not rule out forecastable temporal structure. With
+$\widetilde U_{t,r}=U_{t,r}-1/2$ and maximum lag $K$, define
+\begin{equation}
+\mathcal L_{\mathrm{seq}}(\theta;B)
+=\frac{1}{RK}\sum_{r=1}^R\sum_{k=1}^K
+\left[
+\frac{1}{|B|-k}\sum_{t\in B:k\text{ available}}
+\widetilde U_{t,r}\widetilde U_{t-k,r}
+\right]^2.
+\label{eq:seq-loss}
+\end{equation}
+Under the ideal conditional forecast, the population quantities targeted by
+\eqref{eq:seq-loss} are zero by the sequential PIT theorem. The converse is not
+true: finitely many zero autocovariances do not establish independence.
+
+\subsection{Frequentist CA-RNN objective}
+
+The proposed frequentist objective is
+\begin{equation}
+\widehat\theta_{\CA}
+=\arg\min_\theta\left\{
+\mathcal L_{\mathrm{NLL}}(\theta;\D)
++\lambda_{\mathrm{cal}}\mathcal L_{\mathrm{cal}}(\theta;\D)
++\lambda_{\mathrm{seq}}\mathcal L_{\mathrm{seq}}(\theta;\D)
+\right\}.
+\label{eq:ca-rnn}
+\end{equation}
+The replication experiment initially fixes $\lambda_{\mathrm{seq}}=0$, so that
+\eqref{eq:ca-rnn} follows the source paper's task-loss-plus-calibration structure.
+The sequential term is evaluated separately as a proposed extension.
+
+\subsection{Bayesian CA-RNN objective}
+
+Let every scalar neural parameter have variational posterior and prior
+\[
+q_\phi(\theta_j)=\N(\mu_j,\sigma_j^2),
+\qquad
+p(\theta_j)=\N(0,\sigma_0^2),
+\qquad
+\sigma_j=\operatorname{softplus}(\rho_j)+\epsilon.
+\]
+Sampling uses the reparameterization
+\[
+\theta_j=\mu_j+\sigma_j\varepsilon_j,
+\qquad \varepsilon_j\sim\N(0,1).
+\]
+The independent-Gaussian KL term has closed form
+\begin{equation}
+\KL(q_\phi\|p)
+=\sum_j\left[
+\log\frac{\sigma_0}{\sigma_j}
++\frac{\sigma_j^2+\mu_j^2}{2\sigma_0^2}-\frac12
+\right].
+\label{eq:kl}
+\end{equation}
+
+The calibration-aware variational objective is
+\begin{align}
+\mathcal F^{\CA}(\phi)
+={}&\E_{\theta\sim q_\phi}\left[
+\mathcal L_{\mathrm{NLL}}(\theta;\D)
++\lambda_{\mathrm{cal}}\mathcal L_{\mathrm{cal}}(\theta;\D)
++\lambda_{\mathrm{seq}}\mathcal L_{\mathrm{seq}}(\theta;\D)
+\right]\\
+&+\frac{\beta}{N}\KL(q_\phi(\theta)\|p(\theta)).
+\label{eq:ca-brnn}
+\end{align}
+This is the sequential continuous-outcome analogue of the CA-BNN free energy in
+\cite{huang2024cabl}. The factor $1/N$ matches the mean per-observation likelihood
+convention. The weight $\beta$ remains a validation-selected generalized-Bayes
+hyperparameter.
+
+\begin{proposition}[Unbiased reparameterized gradient for the expectation]
+Assume differentiation and expectation may be interchanged. If
+$\theta^{(m)}=\mu+\sigma(\rho)\odot\varepsilon^{(m)}$ with independent
+$\varepsilon^{(m)}\sim\N(0,I)$, then the Monte Carlo gradient of the expected
+data-dependent part of \eqref{eq:ca-brnn} is unbiased.
+\end{proposition}
+
+\begin{proof}
+Write the expectation with respect to the parameter-free distribution of
+$\varepsilon$. Under the interchange assumption,
+\[
+\nabla_\phi\E_\varepsilon[f(\mu+\sigma(\rho)\odot\varepsilon)]
+=\E_\varepsilon\nabla_\phi f(\mu+\sigma(\rho)\odot\varepsilon).
+\]
+The sample average of independent terms has this expectation. The KL gradient is
+computed analytically from \eqref{eq:kl}.
+\end{proof}
+
+\begin{remark}[Dependent mini-batches]
+Unlike independent classification observations, overlapping time-series windows
+are dependent. Consecutive batches are required to evaluate
+$\mathcal L_{\mathrm{seq}}$, but their nonlinear calibration loss is not asserted
+to be an unbiased estimate of the full-sample calibration loss. Batch length and
+history overlap are therefore methodological hyperparameters and sensitivity
+targets.
+\end{remark}
+
+In the implementation, both calibration penalties are batch-local: lag pairs
+crossing mini-batch boundaries are omitted. Epoch summaries average batch means,
+so the final shorter batch receives the same summary weight as a full batch. The
+displayed dataset-level objectives are the target criteria; stochastic
+optimization uses this documented batch-local surrogate.
+
+\subsection{Training algorithms}
+
+\begin{algorithm}[ht]
+\caption{Frequentist CA-RNN training}
+\label{alg:ca-rnn}
+\begin{algorithmic}[1]
+\Require Ordered observations $\D$; history $H$; projections $A$; weights
+$\lambda_{\mathrm{cal}},\lambda_{\mathrm{seq}}$; epoch limit $E$;
+gradient threshold $c$
+\Ensure Fitted parameters $\widehat\theta$ selected without test information
+\State Split $\D$ chronologically into $\D_{\mathrm{tr}},\D_{\mathrm{val}},
+\D_{\mathrm{te}}$
+\State Fit standardization on $\D_{\mathrm{tr}}$ and construct length-$H$ windows
+\State Initialize $\theta$ and fix $A=(a_1,\ldots,a_R)^{\mathsf T}$
+\For{$e=1,\ldots,E$}
+    \For{consecutive mini-batch $B\subset\D_{\mathrm{tr}}$}
+        \State $(\mu_{\theta,t},L_{\theta,t})_{t\in B}
+        \gets \Call{CARNNForward}{B,\theta}$
+        \State Compute $\mathcal L_{\mathrm{NLL}}$ by \eqref{eq:nll} and
+        projected PITs by \eqref{eq:pit}
+        \State Compute $\mathcal L_{\mathrm{cal}}$ by \eqref{eq:cal-loss} and
+        $\mathcal L_{\mathrm{seq}}$ by \eqref{eq:seq-loss}
+        \State $\mathcal J\gets\mathcal L_{\mathrm{NLL}}
+        +\lambda_{\mathrm{cal}}\mathcal L_{\mathrm{cal}}
+        +\lambda_{\mathrm{seq}}\mathcal L_{\mathrm{seq}}$
+        \State $g\gets\Call{ClipGradNorm}{\nabla_\theta\mathcal J,c}$
+        \State Update $\theta$ with AdamW using $g$
+    \EndFor
+    \State Evaluate the prespecified selection score on $\D_{\mathrm{val}}$
+    \State Save $\theta$ if the validation score improves
+    \If{the patience criterion is met} \State \textbf{break} \EndIf
+\EndFor
+\State Restore the selected checkpoint $\widehat\theta$
+\State Evaluate $\widehat\theta$ once on $\D_{\mathrm{te}}$
+\end{algorithmic}
+\end{algorithm}
+
+For fixed-budget causal loss ablations, checkpoint selection and the patience test
+in Algorithm~\ref{alg:ca-rnn} are disabled, and all specifications are compared
+after the same number of epochs.
+
+\begin{algorithm}[ht]
+\caption{Variational calibration-aware Bayesian RNN training}
+\label{alg:ca-brnn}
+\begin{algorithmic}[1]
+\Require Ordered observations $\D$; projections $A$; prior scale $\sigma_0$;
+Monte Carlo count $M$; loss weights $\lambda_{\mathrm{cal}},
+\lambda_{\mathrm{seq}},\beta$; epoch limit $E$
+\Ensure Variational parameters $\widehat\phi=(\widehat\mu,\widehat\rho)$
+\State Construct chronological splits and training-only standardization as in
+Algorithm~\ref{alg:ca-rnn}
+\State Initialize $\phi=(\mu,\rho)$ and set
+$\sigma(\rho)=\operatorname{softplus}(\rho)+\epsilon$
+\For{$e=1,\ldots,E$}
+    \For{consecutive mini-batch $B\subset\D_{\mathrm{tr}}$}
+        \For{$m=1,\ldots,M$}
+            \State Draw $\varepsilon^{(m)}\sim\N(0,I)$ and set
+            $\theta^{(m)}\gets\mu+\sigma(\rho)\odot\varepsilon^{(m)}$
+            \State Use $\theta^{(m)}$ consistently at every recurrent time step
+            \State Compute $\mathcal J^{(m)}_{\mathrm{data}}\gets
+            \mathcal L_{\mathrm{NLL}}^{(m)}+\lambda_{\mathrm{cal}}
+            \mathcal L_{\mathrm{cal}}^{(m)}+\lambda_{\mathrm{seq}}
+            \mathcal L_{\mathrm{seq}}^{(m)}$
+        \EndFor
+        \State $\widehat{\mathcal F}^{\CA}\gets M^{-1}\sum_{m=1}^M
+        \mathcal J^{(m)}_{\mathrm{data}}+(\beta/N)\KL(q_\phi\Vert p)$
+        \State Differentiate $\widehat{\mathcal F}^{\CA}$, clip its gradient,
+        and update $\phi$ with AdamW
+    \EndFor
+    \State Evaluate validation NLL at posterior-mean weights and update the
+    selected checkpoint
+    \If{the patience criterion is met} \State \textbf{break} \EndIf
+\EndFor
+\State Restore $\widehat\phi$
+\For{each test origin $t$ and predictive draw $s$}
+    \State Draw $\theta^{(s)}\sim q_{\widehat\phi}$ and then
+    $Y_{t+1}^{(s)}\sim p_{\theta^{(s)}}(\cdot\mid\F_t)$
+\EndFor
+\State Evaluate the posterior predictive mixture on $\D_{\mathrm{te}}$
+\end{algorithmic}
+\end{algorithm}
+
+Algorithm~\ref{alg:ca-brnn} is the recurrent continuous-outcome adaptation of the
+CA-BNN procedure in \cite{huang2024cabl}.
+
+\section{Model Misspecification and Distribution Shift}
+
+\subsection{Distinguishing misspecification from shift}
+
+Model misspecification occurs when the true conditional law $P_0(Y_{t+1}\mid
+\F_t)$ is outside the fitted family, even if the data law is stationary.
+Distribution shift occurs when the evaluation law differs from the development
+law. The two can coexist: a Gaussian predictive head is misspecified under
+heavy-tailed innovations, while a transition from Gaussian training innovations
+to heavy-tailed test innovations is also a distribution shift.
+
+Let $P_0$ denote the reference law and let $P_{\delta,s}$ denote stress family $s$
+at severity $\delta\geq0$, with $P_{0,s}=P_0$. For metric $M$, define degradation
+\begin{equation}
+\Delta_M^{(m,s)}(\delta)
+=M(P_{\delta,s},\widehat P_m)-M(P_{0,s},\widehat P_m),
+\label{eq:degradation}
+\end{equation}
+where $m$ indexes the forecasting method. For metrics in which smaller is better,
+positive $\Delta_M$ denotes deterioration. Coverage is reported as absolute error
+from the nominal level before differencing.
+
+\subsection{Stress families}
+
+The following are prospective isolated stress families for a confirmatory study;
+they were not all executed factorially in the present experiments:
+\begin{enumerate}
+    \item \textbf{Scale shift:} innovation covariance is multiplied by a severity
+    function while dependence is held fixed.
+    \item \textbf{Dependence shift:} correlations or a dynamic correlation state
+    change while marginal variances are controlled.
+    \item \textbf{Tail shift:} Gaussian innovations transition to Student-$t$,
+    mixtures, or asymmetric downside contamination.
+    \item \textbf{Volatility misspecification:} ARCH/GARCH or stochastic-volatility
+    dynamics violate the Gaussian head's conditionally homoskedastic approximation.
+    \item \textbf{Mean-dynamics shift:} nonlinear interactions or an abrupt change
+    in recurrent coefficients alter the conditional location.
+\end{enumerate}
+
+The implemented developmental curve uses common random numbers and jointly changes
+scale and common correlation. Models are selected without examining its stressed
+test metrics and are frozen after fitting at $\delta=0$. Tail, volatility, and
+mean-dynamics regimes appear in separate developmental simulations, not in a
+completed isolated-factor robustness experiment.
+
+\subsection{Robustness estimands}
+
+For paired realization $b$, method $m$, comparator $c$, and metric $M$, define
+\[
+D_b^{m,c}(\delta)=M_b^m(\delta)-M_b^c(\delta).
+\]
+For a future experiment with $B$ independent DGP realizations, the intended
+summary is
+\[
+\overline D^{m,c}(\delta)=\frac1B\sum_{b=1}^B D_b^{m,c}(\delta),
+\qquad
+\operatorname{MCSE}(\overline D)=
+\frac{s_D(\delta)}{\sqrt B}.
+\]
+Neural-seed repetitions on a prespecified subset separate DGP variability from
+optimization variability. Failure frequencies and runtimes are part of the
+estimand rather than discarded implementation details.
+
+\section{Experimental Design}
+
+\subsection{Four-model replication matrix}
+
+The core experiment follows the comparison logic of
+\cite{huang2024cabl}:
+\begin{table}[ht]
+\centering
+\caption{Mapping from calibration-aware classification to forecasting.}
+\begin{tabular}{lll}
+\toprule
+Source-paper model & Forecasting model & Objective components \\
+\midrule
+FNN & RNN & NLL \\
+BNN & BRNN & expected NLL $+$ KL \\
+CA-FNN & CA-RNN & NLL $+$ projected-PIT calibration \\
+CA-BNN & CA-BRNN & expected NLL/calibration $+$ KL \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Architectures, histories, splits, optimizers, stopping rules, and predictive heads
+are matched wherever the Bayesian formulation permits. The same projection matrix
+is used for all models in a comparison.
+
+\subsection{Calibration-weight experiment}
+
+Analogously to the source paper's plot of ECE and accuracy against $\lambda$, this
+study plots projected-PIT calibration error and predictive performance against
+$\lambda_{\mathrm{cal}}$. The paired panels will contain:
+\begin{enumerate}
+    \item projected calibration discrepancy and reliability curves;
+    \item Energy Score, NLL where comparable, RMSE, interval score, and width.
+\end{enumerate}
+The result of interest is a Pareto relationship, not calibration alone. Separate
+curves are required for CA-RNN and CA-BRNN.
+
+\subsection{Sequential ablation}
+
+The minimum ablation is:
+\begin{table}[ht]
+\centering
+\caption{Loss-component ablation.}
+\begin{tabular}{lccc}
+\toprule
+Specification & NLL & $\mathcal L_{\mathrm{cal}}$ & $\mathcal L_{\mathrm{seq}}$ \\
+\midrule
+RNN & \checkmark & & \\
+CA-RNN & \checkmark & \checkmark & \\
+CA-RNN (sequential) & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+The Bayesian versions repeat this comparison with the KL term always present.
+Additional ablations vary coordinate-only versus augmented projections, smoothing
+temperature, batch length, lag order, prior scale, and $\beta$.
+
+To prevent checkpoint selection from masquerading as a calibration effect, the
+primary loss-component ablation uses identical initial parameters, chronological
+mini-batches, optimization budgets, and predictive random numbers, with early
+stopping disabled. A secondary operational comparison may use early stopping, but
+all methods must then be selected by the same validation NLL rule.
+
+\subsection{Controlled simulations}
+
+Development simulations include Gaussian, heavy-tailed, heteroskedastic, and
+nonlinear regimes. A future confirmatory experiment should use independently
+generated data for every regime, sample size, shift severity, and DGP seed, with
+the following fixed in advance:
+\begin{itemize}
+    \item sample sizes and number of independent realizations;
+    \item neural-seed subset and number of optimization repetitions;
+    \item calibration and KL grids;
+    \item projection directions and smoothing grid;
+    \item primary metrics and failure definitions; and
+    \item rules for early stopping and invalid numerical runs.
+\end{itemize}
+
+\subsection{Financial application}
+
+The application uses adjusted daily prices for AAPL, JPM, XOM, and WMT beginning
+in 2007 and converts them to aligned log returns. The four assets provide a small,
+computationally manageable multivariate system with heterogeneous sector exposure.
+All splits are chronological. Development selected
+$\lambda_{\mathrm{cal}}=100$ and $\lambda_{\mathrm{seq}}=2000$ before the
+multi-seed and rolling-regime analyses. The focused frequentist comparison uses a
+32-unit GRU, a 20-day history, a joint Gaussian head, 500 forecast draws, and
+validation-NLL early stopping.
+
+Standardization is fitted on each training partition. Validation contexts carry
+the final 20 training observations, and test contexts carry the final 20
+validation observations; every evaluation target therefore retains an available
+historical context without using future information. RMSE, Energy Score, interval
+width, and interval score are reported in training-standardized units. Coverage
+and PIT diagnostics are invariant to the componentwise affine transformation.
+The two penalty weights were chosen after inspecting developmental simulation
+and ablation outcomes, rather than by a pristine validation-only or preregistered
+selection procedure.
+
+The rolling analysis uses expanding estimation samples and four non-overlapping
+test periods: 2017--2019 (pre-pandemic), 2020--2021 (pandemic), 2022--2023
+(inflation and monetary tightening), and 2024--2025 (recent). Each window has a
+strictly subsequent validation period and five matched optimization seeds. These
+labels describe calendar periods rather than uniquely identified causal regimes.
+Because the full panel was observed during development and the final two windows
+overlap the initial test period, this is temporal robustness evidence rather than
+a pristine preregistered confirmatory experiment.
+
+\subsection{Paired uncertainty design}
+
+For model $m$, comparator $c$, seed $s$, and forecast origin $t$, let
+$d_{s,t}^{m,c}$ be a paired additive-score difference. The estimand is
+\[
+ \widehat\Delta^{m,c}=\frac{1}{S}\sum_{s=1}^S\frac{1}{T}
+ \sum_{t=1}^T d_{s,t}^{m,c}.
+\]
+The hierarchical bootstrap resamples optimization seeds and, within each selected
+seed, matched forecast origins in moving blocks of 20 trading days. Projected-PIT
+calibration, coverage error, and PIT dependence are recomputed in every bootstrap
+draw. The initial financial analysis uses 2,000 draws and each rolling regime uses
+1,000. Raw coverage and width remain descriptive; the inferential coverage loss is
+\[
+ E_{\mathrm{cov}}=|\widehat C_{0.90}-0.90|.
+\]
+Negative candidate-minus-comparator differences favor the candidate for loss
+metrics. An interval containing zero is called unresolved, not evidence of
+equality. Inference conditions on the architecture, tuning path, projection set,
+assets, and observed calendar windows.
+
+\subsection{Metrics and figures}
+
+The tables report mean performance, paired differences, and uncertainty
+intervals. The diagnostic figures include:
+\begin{enumerate}
+    \item calibration and predictive metrics versus $\lambda_{\mathrm{cal}}$;
+    \item nominal-versus-empirical coverage curves;
+    \item projected PIT histograms or CDF reliability curves;
+    \item PIT autocorrelation diagnostics;
+    \item degradation curves versus shift severity; and
+    \item a calibration--sharpness or calibration--Energy Score frontier.
+\end{enumerate}
+
+\section{Results}
+
+\subsection{Implementation validation}
+
+The implementation tests cover tensor dimensions, covariance
+positive-definiteness, loss evaluation, forecasting, chronological data handling,
+and paired-bootstrap identities. Eighteen automated tests pass. The notebooks also
+completed the simulation, shift, financial, optimization-seed, and rolling-regime
+workflows. Successful execution establishes implementation consistency but is not
+itself statistical validation.
+
+\subsection{Four-model comparison}
+
+The initial matched comparison showed that calibration-aware objectives alter the
+forecast distribution but do not yield uniform dominance. CA-RNN made only a
+small projected-calibration improvement over RNN, while CA-BRNN did not improve
+on BRNN. Bayesian averaging did not remove the calibration--score tradeoff. The
+frequentist RNN, CA-RNN, and sequential
+CA-RNN therefore form the focused empirical comparison; BRNN and CA-BRNN remain
+supporting replications of the source paper's model matrix.
+
+\subsection{Calibration-weight sensitivity}
+
+The exploratory sweep over
+$\lambda_{\mathrm{cal}}\in\{0,1,10,50,100,250,500\}$ displayed a Pareto
+tradeoff: projected calibration improved through the intermediate penalty range,
+whereas likelihood and proper-score performance deteriorated. The value 100 was
+retained as a developmental compromise rather than selected to maximize a final
+test result. Calibration improvement alone is therefore not interpreted as a
+better probabilistic forecast.
+
+\subsection{Sequential calibration ablation}
+
+Relative to marginal CA-RNN, the sequential specification consistently repaired
+predictive performance. In the ten-seed financial experiment it improved MSE,
+Energy Score, interval score, nominal-coverage error, and projected-PIT
+calibration for every seed. It widened intervals, but simultaneous coverage and
+interval-score improvements show that the result is not merely unpenalized
+widening. Improvements in PIT temporal dependence were smaller and generally
+unresolved. The sequential penalty is empirically important, but the evidence
+does not establish PIT independence.
+
+\subsection{Misspecification and distribution shift}
+
+The frozen-model experiment jointly increased innovation scale and common
+correlation from severity zero to one. All specifications deteriorated. At zero,
+RNN had Energy Score 1.2094, interval score 3.8581, and projected calibration
+error 0.001068, compared with 1.2124, 3.9251, and 0.001545 for sequential CA-RNN.
+At maximum severity, the ordering reversed: RNN obtained 2.3671, 10.3070, and
+0.009370, while sequential CA-RNN obtained 2.3416, 10.0120, and 0.007728. This
+single-seed combined stress is developmental evidence rather than an isolated
+causal test of scale or dependence. Absolute levels and paired degradation are
+considered together because a worse nominal starting point can mechanically
+reduce measured deterioration.
+
+\subsection{Financial results}
+
+Table~\ref{tab:seed-results} reports averages over ten matched optimization seeds
+on the original financial test period. Sequential CA-RNN reduced projected-PIT
+calibration error relative to RNN for all ten seeds, from $0.001382$ to
+$0.001185$, or approximately 14\%. Its Energy Score and RMSE were worse for all
+ten seeds. The interval-score difference was unresolved, with a 95\% hierarchical
+interval of $[-0.0047,0.0235]$, as was the nominal-coverage error difference.
+
+\begin{table}[ht]
+\centering
+\caption{Mean financial performance over ten matched optimization seeds. Lower
+is better except for coverage, whose nominal target is 0.90.}
+\label{tab:seed-results}
+\begin{tabular}{lrrrrr}
+\toprule
+Model & RMSE & Energy & Interval & Coverage & PIT calibration \\
+\midrule
+RNN & 0.9368 & 1.1394 & 4.0509 & 0.8725 & 0.001382 \\
+CA-RNN & 0.9474 & 1.1510 & 4.0979 & 0.8650 & 0.001265 \\
+Sequential CA-RNN & 0.9448 & 1.1478 & 4.0612 & 0.8748 & 0.001185 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Plain CA-RNN isolates why the extension matters. Against RNN it had worse MSE,
+Energy Score, interval score, and coverage error despite lower projected-PIT
+error. Sequential CA-RNN then improved MSE by $0.00483$, Energy Score by
+$0.00329$, interval score by $0.03673$, and coverage error by $0.00979$ relative
+to CA-RNN; every corresponding hierarchical interval excluded zero. It repairs a
+substantial part, but not all, of the cost of marginal calibration.
+
+\subsection{Rolling market-regime results}
+
+Table~\ref{tab:regime-results} gives five-seed means. Sequential CA-RNN had lower
+projected-PIT calibration error than RNN in all four regimes. Hierarchical
+intervals favored it in the pre-pandemic, inflation/tightening, and recent
+windows; the pandemic difference was unresolved. In contrast, its Energy Score
+was lower only pre-pandemic, where the difference was unresolved.
+
+\begin{table}[ht]
+\centering
+\caption{Five-seed regime means for RNN (R) and sequential CA-RNN (S).}
+\label{tab:regime-results}
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{2}{c}{Energy Score} & \multicolumn{2}{c}{Interval score}
+& \multicolumn{2}{c}{PIT calibration} \\
+Regime & R & S & R & S & R & S \\
+\midrule
+Pre-pandemic & 0.8629 & 0.8626 & 3.1123 & 3.1027 & 0.001914 & 0.001503 \\
+Pandemic & 1.5016 & 1.5029 & 5.7371 & 5.6629 & 0.002995 & 0.002883 \\
+Inflation/tightening & 1.2809 & 1.2884 & 4.5862 & 4.5396 & 0.001842 & 0.001465 \\
+Recent & 1.0237 & 1.0289 & 3.6648 & 3.6935 & 0.001224 & 0.000904 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The interval-score ordering is regime-dependent. Sequential CA-RNN significantly
+outperformed RNN during the pandemic and inflation/tightening periods, was
+unresolved pre-pandemic, and significantly underperformed recently. Coverage
+error similarly favored sequential CA-RNN pre-pandemic and during
+inflation/tightening, was unresolved during the pandemic, and favored RNN
+recently. These reversals directly answer the distribution-shift question.
+
+Across regimes, sequential CA-RNN improved Energy Score and interval score over
+marginal CA-RNN directionally in four of four windows. These improvements were
+resolved in the pandemic, inflation/tightening, and recent windows, while the
+pre-pandemic differences were unresolved. Projected calibration improved over
+marginal CA-RNN in three of four windows.
+
+\begin{figure}[ht]
+\centering
+\IfFileExists{../results/market_regimes/regime_metric_profiles.png}{%
+\includegraphics[width=\textwidth]{../results/market_regimes/regime_metric_profiles.png}%
+}{\fbox{\parbox{0.9\textwidth}{Run notebook 09 to generate the rolling-regime
+metric profile.}}}
+\caption{Mean Energy Score, interval score, and projected-PIT calibration error
+across five matched seeds and four chronological test regimes. Lower is better.}
+\label{fig:regime-profiles}
+\end{figure}
+
+\subsection{Interval-score mechanism under temporal shift}
+
+To explain the regime reversal, the retained forecasts were analyzed without
+refitting. For a 90\% interval $[L_{t,j},U_{t,j}]$, the componentwise interval
+score decomposes exactly as
+\begin{equation}
+ S_{t,j}=\underbrace{U_{t,j}-L_{t,j}}_{\text{width}}
+ +\underbrace{20(L_{t,j}-Y_{t,j})\ind\{Y_{t,j}<L_{t,j}\}}_{\text{lower-tail penalty}}
+ +\underbrace{20(Y_{t,j}-U_{t,j})\ind\{Y_{t,j}>U_{t,j}\}}_{\text{upper-tail penalty}}.
+ \label{eq:interval-decomposition}
+\end{equation}
+Table~\ref{tab:interval-mechanism} reports the mean sequential-CA-RNN-minus-RNN
+difference in each component. The arithmetic identity in
+\eqref{eq:interval-decomposition} means the final column is exactly the sum of the
+preceding three columns.
+
+\begin{table}[ht]
+\centering
+\caption{Decomposition of the interval-score difference between sequential
+CA-RNN and RNN. Negative total differences favor sequential CA-RNN.}
+\label{tab:interval-mechanism}
+\begin{tabular}{lrrrr}
+\toprule
+Regime & Width & Lower penalty & Upper penalty & Total \\
+\midrule
+Pre-pandemic & $-0.0439$ & $+0.0241$ & $+0.0103$ & $-0.0096$ \\
+Pandemic & $+0.0420$ & $-0.0599$ & $-0.0563$ & $-0.0742$ \\
+Inflation/tightening & $+0.2342$ & $-0.1709$ & $-0.1098$ & $-0.0466$ \\
+Recent & $-0.0185$ & $+0.0268$ & $+0.0205$ & $+0.0287$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The pandemic and inflation/tightening improvements arise through beneficial
+widening: the added width is more than offset by reductions in both tail-miss
+penalties. In the recent period, sequential CA-RNN instead produces slightly
+narrower intervals and larger penalties in both tails. Before the pandemic, the
+mechanism is different again: reduced width outweighs the additional tail
+penalties, yielding a small and statistically unresolved sharpness benefit.
+
+The stress-period effect is concentrated in forecasts preceded by elevated
+volatility. Sequential CA-RNN's interval-score differences in the pandemic are
+$+0.0198$, $-0.0725$, and $-0.1705$ for low-, medium-, and high-volatility
+origins, respectively. During inflation/tightening they are $+0.0209$, $-0.0562$,
+and $-0.1045$. By contrast, the recent-period differences are positive in every
+state: $+0.0318$, $+0.0238$, and $+0.0305$. Volatility states use trailing 20-day
+realized volatility known before each forecast and within-regime terciles.
+
+The improvements are also asset-concentrated. XOM accounts for most of the
+inflation/tightening gain, with an interval-score difference of $-0.2364$;
+AAPL, JPM, and WMT have differences of $-0.0051$, $+0.0221$, and $+0.0331$.
+Pandemic improvements occur for AAPL, XOM, and WMT but not JPM. Recent losses are
+concentrated in AAPL, XOM, and WMT, while JPM improves slightly. These results
+preclude interpreting an aggregate gain as uniform across assets.
+
+The train-to-test descriptors support, but do not prove, a scale-and-tail
+interpretation. Pandemic volatility is 1.26 times its training level and the mean
+standardized fourth moment is 29.87. The corresponding values are 1.00 and 12.08
+during inflation/tightening, versus 0.83 and 6.37 recently. The recent period has
+the largest standardized location shift and correlation shift of the four
+windows. Thus sequential calibration appears most useful for persistent scale and
+tail errors, while lower-volatility location or dependence changes remain harder.
+
+Importantly, projected and coordinate PIT calibration still improve recently even
+as 90\% interval performance deteriorates. The calibration loss averages 19 CDF
+grid levels and multiple projections; it does not target the 5\% and 95\% quantiles
+specifically. Better global PIT uniformity can therefore coexist with worse tail
+coverage. The exact score decomposition is established by the retained forecasts,
+whereas the proposed economic mechanism is post-hoc and requires new data for
+confirmation.
+
+\begin{figure}[ht]
+\centering
+\IfFileExists{../results/interval_mechanisms/interval_score_decomposition.png}{%
+\includegraphics[width=0.82\textwidth]{../results/interval_mechanisms/interval_score_decomposition.png}%
+}{\fbox{\parbox{0.8\textwidth}{Run notebook 10 to generate the interval-score
+decomposition.}}}
+\caption{Exact decomposition of sequential-CA-RNN-minus-RNN interval-score
+differences. Tail reductions offset widening in the pandemic and
+inflation/tightening periods, but not in the recent period.}
+\label{fig:interval-mechanism}
+\end{figure}
+
+\section{Discussion}
+
+\subsection{Interpretation}
+
+Three conclusions follow. First, a marginal calibration penalty is insufficient
+for dependent multivariate forecasting: it can improve its targeted diagnostic
+while harming proper scores and nominal coverage. Second, the sequential loss is
+not cosmetic; it consistently improves marginal CA-RNN and recovers much of its
+predictive-performance loss. Third, sequential CA-RNN is a calibration-oriented
+method rather than a uniformly more accurate forecaster. Its projected-calibration
+advantage is stable across seeds and calendar periods, whereas its proper-score
+advantage depends on regime and scoring rule.
+
+The disagreement between Energy Score and interval score is substantively useful.
+Energy Score assesses the multivariate predictive distribution, whereas the
+marginal interval score rewards coverage and sharpness asset by asset. During the
+pandemic and inflation/tightening periods, sequential CA-RNN improves the latter
+without improving the former. Its practical value therefore depends on whether an
+application prioritizes marginal risk intervals or overall multivariate accuracy.
+
+\subsection{Limitations}
+
+Limitations include finite projection sets, four assets, one-step horizons,
+sensitivity to smoothing and batching, mean-field variational misspecification, a
+Gaussian predictive head, and limited ability to establish conditional
+calibration from finite dependent sequences. Regime labels are calendar-based and
+partly specified after broader exposure to the data. The hierarchical bootstrap
+represents seed and within-window sampling variation but conditions on the
+architecture, tuning path, assets, projections, and chosen windows. Moving-block
+resampling can distort PIT autocorrelation at artificial block boundaries, so
+temporal-dependence intervals are interpreted cautiously. Finally, improved
+finite-projection calibration does not imply full joint or conditional
+calibration.
+
+\subsection{Future work}
+
+The most direct methodological extension is a tail-aware sequential calibration
+objective. The current loss weights all 19 PIT grid levels and all fixed
+projections equally. A weighted version could emphasize application-relevant tail
+levels,
+\begin{equation}
+ \mathcal L_{\mathrm{tail}}
+ =\frac{1}{R\sum_g w_g}\sum_{r=1}^R\sum_{g=1}^G w_g
+ \left[\frac{1}{|B|}\sum_{t\in B}s_\tau(q_g-U_{t,r})-q_g\right]^2,
+ \label{eq:tail-calibration}
+\end{equation}
+with larger prespecified $w_g$ near $q=0.05$ and $q=0.95$. A complementary
+extension would penalize lagged dependence in tail exceedance indicators rather
+than only covariance of centered PITs. Either extension must be tuned on
+validation data and evaluated with global calibration and proper scores to avoid
+improving one nominal interval at the expense of the rest of the distribution.
+
+Further work should test whether the observed high-volatility benefit replicates
+for new assets, frequencies, forecast horizons, and genuinely held-out calendar
+periods. Conditional calibration diagnostics could use volatility, market return,
+and liquidity states fixed before evaluation. Heavy-tailed or mixture predictive
+heads may separate deficiencies in the Gaussian output law from deficiencies in
+the calibration objective. Finally, uncertainty for PIT dependence should use a
+procedure that avoids correlations introduced at moving-block boundaries.
+
+\section{Conclusion}
+
+This paper adapts calibration-aware Bayesian learning to continuous multivariate
+recurrent forecasting and introduces a temporal calibration penalty based on
+lagged projected-PIT covariance. Calibration-aware training reliably changes
+forecast calibration, but marginal regularization alone incurs predictive costs.
+The sequential extension consistently improves the marginal CA-RNN specification
+and produces lower projected-PIT calibration error than a likelihood-trained RNN
+across ten optimization seeds and four chronological market regimes.
+
+The method is not uniformly superior. RNN retains better point and Energy Score
+performance in much of the financial evidence, and interval-score advantages
+reverse across regimes. The contribution is therefore not a dominance claim. It
+is evidence that temporal calibration must be addressed explicitly, that doing so
+repairs the direct calibration-aware adaptation, and that the remaining
+calibration--accuracy tradeoff varies systematically under temporal distribution
+shift.
+
+\appendix
+
+\section{Implementation Correspondence}
+
+\begin{table}[ht]
+\centering
+\caption{Mathematical objects and current source modules.}
+\small
+\begin{tabular}{ll}
+\toprule
+Object & Source location \\
+\midrule
+GRU and joint Gaussian head & \texttt{src/innovcal/ca\_rnn/model.py} \\
+Mean-field variational layers & \texttt{src/innovcal/ca\_rnn/layers.py} \\
+Cholesky transformation & \texttt{src/innovcal/ca\_rnn/distributions.py} \\
+Projected PIT and calibration losses & \texttt{src/innovcal/ca\_rnn/losses.py} \\
+Training and early stopping & \texttt{src/innovcal/ca\_rnn/trainer.py} \\
+Predictive sampling & \texttt{src/innovcal/ca\_rnn/predict.py} \\
+Controlled DGPs & \texttt{src/innovcal/data/simulation.py} \\
+Sample-based evaluation & \texttt{src/innovcal/evaluation/metrics.py} \\
+Hierarchical paired inference & \texttt{src/innovcal/evaluation/uncertainty.py} \\
+Seed and regime experiments & \texttt{src/innovcal/experiments/reproducibility.py} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{thebibliography}{9}
+
+\bibitem{huang2024cabl}
+J. Huang, S. Park, and O. Simeone,
+``Calibration-Aware Bayesian Learning,''
+\emph{arXiv preprint arXiv:2305.07504}, version 2, 2024.
+
+\end{thebibliography}
+
+\end{document}

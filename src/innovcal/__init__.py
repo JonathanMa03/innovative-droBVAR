@@ -1,17 +1,6 @@
-"""Calibrated and robust multivariate forecasting tools."""
+"""Calibration-aware recurrent forecasting."""
 
-__all__ = ["DIVAR", "DIVARConfig", "DIVARForecast"]
+from innovcal.ca_rnn import CARNN, BayesianCARNN, CARNNConfig
+
+__all__ = ["CARNN", "BayesianCARNN", "CARNNConfig"]
 __version__ = "0.1.0"
-
-
-def __getattr__(name: str):
-    """Load optional neural components only when explicitly requested."""
-    if name in __all__:
-        from innovcal.di_var import DIVAR, DIVARConfig, DIVARForecast
-
-        return {
-            "DIVAR": DIVAR,
-            "DIVARConfig": DIVARConfig,
-            "DIVARForecast": DIVARForecast,
-        }[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

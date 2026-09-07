@@ -1,156 +1,96 @@
+"""Sample-based multivariate forecast evaluation."""
+
 import numpy as np
-
-from innovcal.forecasting.intervals import forecast_quantiles, prediction_interval, average_interval_width
-from innovcal.calibration.coverage import interval_coverage, average_coverage
-from innovcal.calibration.ece import expected_calibration_error_intervals
-from innovcal.calibration.pit import pit_values_multivariate_marginal, pit_deviation_from_uniform
-from innovcal.evaluation.scoring_rules import summarize_scoring_rules
+from scipy import stats
 
 
-def summarize_probabilistic_forecast(
-    forecast_paths: np.ndarray,
-    y_true: np.ndarray,
-    interval: tuple[float, float] = (0.05, 0.95),
-    nominal_levels: tuple[float, ...] = (0.5, 0.8, 0.9),
-) -> dict:
-    """
-    Unified forecast summary.
+def _validate(target: np.ndarray, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    target = np.asarray(target, dtype=float)
+    samples = np.asarray(samples, dtype=float)
+    if target.ndim != 2 or samples.ndim != 3:
+        raise ValueError("target and samples require shapes (cases, d) and (draws, cases, d)")
+    if samples.shape[1:] != target.shape or not np.isfinite(samples).all():
+        raise ValueError("forecast samples do not match finite targets")
+    return target, samples
 
-    Parameters
-    ----------
-    forecast_paths:
-        Shape (n_paths, horizon, k)
 
-    y_true:
-        Shape (horizon, k)
-    """
-    lower_q, upper_q = interval
-    alpha = lower_q + (1.0 - upper_q)
+def empirical_pits(
+    target: np.ndarray,
+    samples: np.ndarray,
+    projections: np.ndarray | None = None,
+) -> np.ndarray:
+    """Compute randomized-rank PITs after optional linear projection."""
+    target, samples = _validate(target, samples)
+    if projections is None:
+        projections = np.eye(target.shape[1])
+    projections = np.asarray(projections, dtype=float)
+    if projections.ndim != 2 or projections.shape[1] != target.shape[1]:
+        raise ValueError("projections must have shape (n_projections, dimension)")
+    projected_target = np.einsum("bd,rd->br", target, projections)
+    projected_samples = np.einsum("sbd,rd->sbr", samples, projections)
+    return (
+        (projected_samples < projected_target[None]).sum(axis=0) + 0.5
+    ) / (samples.shape[0] + 1.0)
 
-    qs = forecast_quantiles(
-        forecast_paths,
-        quantiles=(lower_q, 0.5, upper_q),
-    )
 
-    lower = qs[lower_q]
-    median = qs[0.5]
-    upper = qs[upper_q]
-
-    coverage = interval_coverage(
-        y_true=y_true,
-        lower=lower,
-        upper=upper,
-    )
-
-    avg_cov = average_coverage(
-        y_true=y_true,
-        lower=lower,
-        upper=upper,
-    )
-
-    width = average_interval_width(
-        lower=lower,
-        upper=upper,
-    )
-
-    scoring = summarize_scoring_rules(
-        forecast_paths=forecast_paths,
-        y_true=y_true,
-        lower=lower,
-        upper=upper,
-        alpha=alpha,
-    )
-
-    ece_result = expected_calibration_error_intervals(
-        forecast_paths=forecast_paths,
-        y_true=y_true,
-        nominal_levels=nominal_levels,
-    )
-
-    pit = pit_values_multivariate_marginal(
-        forecast_paths=forecast_paths,
-        y_true=y_true,
-    )
-
+def pit_diagnostics(pits: np.ndarray, max_lag: int = 5) -> dict[str, float]:
+    pits = np.asarray(pits, dtype=float)
+    if pits.ndim != 2:
+        raise ValueError("pits must have shape (cases, projections)")
+    grid = np.linspace(0.05, 0.95, 19)
+    cdf = np.mean(pits[:, None, :] <= grid[None, :, None], axis=0)
+    calibration_error = float(np.mean((cdf - grid[:, None]) ** 2))
+    centered = pits - 0.5
+    autocorrelations = []
+    for lag in range(1, min(max_lag, len(pits) - 1) + 1):
+        numerator = np.mean(centered[lag:] * centered[:-lag], axis=0)
+        denominator = np.mean(centered**2, axis=0)
+        autocorrelations.extend(np.abs(numerator / np.maximum(denominator, 1e-12)))
+    ks = [
+        stats.kstest(pits[:, index], "uniform", method="asymp").statistic
+        for index in range(pits.shape[1])
+    ]
     return {
-        "avg_coverage": float(avg_cov),
-        "coverage_by_series": coverage,
-        "avg_width": float(width.mean()),
-        "width_by_series": width,
-        "energy_score": float(scoring["energy_score"]),
-        "crps": float(scoring["crps"]),
-        "interval_score": float(scoring["interval_score"]),
-        "ece": float(ece_result["ece"]),
-        "pit_deviation": float(pit_deviation_from_uniform(pit)),
-        "pit_values": pit,
-        "lower": lower,
-        "median": median,
-        "upper": upper,
+        "pit_calibration_error": calibration_error,
+        "pit_mean_absolute_autocorrelation": float(np.mean(autocorrelations)) if autocorrelations else 0.0,
+        "pit_mean_ks": float(np.mean(ks)),
     }
 
 
-def make_summary_row(
-    dgp_name: str,
-    forecast_model: str,
-    innovation_model: str,
-    summary: dict,
-) -> dict:
-    coverage = summary["coverage_by_series"]
-    width = summary["width_by_series"]
+def energy_score(target: np.ndarray, samples: np.ndarray, seed: int = 123) -> float:
+    target, samples = _validate(target, samples)
+    first = np.linalg.norm(samples - target[None], axis=-1).mean(axis=0)
+    rng = np.random.default_rng(seed)
+    paired = samples[rng.permutation(len(samples))]
+    second = np.linalg.norm(samples - paired, axis=-1).mean(axis=0)
+    return float(np.mean(first - 0.5 * second))
 
-    row = {
-        "dgp": dgp_name,
-        "forecast_model": forecast_model,
-        "innovation_model": innovation_model,
-        "avg_coverage": summary["avg_coverage"],
-        "avg_width": summary["avg_width"],
-        "energy_score": summary["energy_score"],
-        "crps": summary["crps"],
-        "interval_score": summary["interval_score"],
-        "ece": summary["ece"],
-        "pit_deviation": summary["pit_deviation"],
+
+def evaluate_samples(
+    target: np.ndarray,
+    samples: np.ndarray,
+    interval_level: float = 0.9,
+    projections: np.ndarray | None = None,
+) -> dict[str, float]:
+    """Evaluate marginal calibration, sharpness, RMSE, and Energy Score."""
+    target, samples = _validate(target, samples)
+    alpha = 1.0 - interval_level
+    lower = np.quantile(samples, alpha / 2.0, axis=0)
+    upper = np.quantile(samples, 1.0 - alpha / 2.0, axis=0)
+    below, above = target < lower, target > upper
+    interval_score = (upper - lower) + (2.0 / alpha) * (
+        (lower - target) * below + (target - upper) * above
+    )
+    coordinate_pits = empirical_pits(target, samples)
+    projected_pits = empirical_pits(target, samples, projections)
+    result = {
+        "rmse": float(np.sqrt(np.mean((samples.mean(axis=0) - target) ** 2))),
+        "energy_score": energy_score(target, samples),
+        "coverage": float(np.mean((target >= lower) & (target <= upper))),
+        "interval_width": float(np.mean(upper - lower)),
+        "interval_score": float(np.mean(interval_score)),
     }
-
-    for j in range(len(coverage)):
-        row[f"coverage_{j+1}"] = float(coverage[j])
-        row[f"width_{j+1}"] = float(width[j])
-
-    return row
-
-
-def summarize_many_forecasts(
-    forecast_dict: dict,
-    y_true: np.ndarray,
-    dgp_name: str,
-    forecast_model: str,
-) -> tuple[list[dict], dict]:
-    """
-    Summarize multiple innovation forecast outputs.
-
-    Parameters
-    ----------
-    forecast_dict:
-        Dictionary where keys are innovation model names and values are
-        forecast paths with shape (n_paths, horizon, k).
-    """
-    rows = []
-    summaries = {}
-
-    for innovation_model, paths in forecast_dict.items():
-        summary = summarize_probabilistic_forecast(
-            forecast_paths=paths,
-            y_true=y_true,
-        )
-
-        rows.append(
-            make_summary_row(
-                dgp_name=dgp_name,
-                forecast_model=forecast_model,
-                innovation_model=innovation_model,
-                summary=summary,
-            )
-        )
-
-        summaries[innovation_model] = summary
-
-    return rows, summaries
+    result.update(pit_diagnostics(projected_pits))
+    coordinate = pit_diagnostics(coordinate_pits)
+    result.update({f"coordinate_{name}": value for name, value in coordinate.items()})
+    return result

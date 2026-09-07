@@ -1,7 +1,7 @@
 [project]
 name = "innovcal"
 version = "0.1.0"
-description = "Diffusion-based innovation modeling for probabilistic forecast calibration and robustness."
+description = "Calibration-aware recurrent neural networks for multivariate probabilistic forecasting."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
@@ -12,13 +12,9 @@ dependencies = [
     "pandas",
     "scipy",
     "matplotlib",
-    "scikit-learn",
     "torch",
-    "tqdm",
     "jupyter",
     "ipykernel",
-    "python-dotenv",
-    "statsmodels",
 ]
 
 [project.optional-dependencies]

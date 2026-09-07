@@ -1,15 +1,22 @@
-"""Data preparation and simulation utilities."""
+"""Data preparation and controlled data-generating processes."""
 
-from innovcal.data.financial import ChronologicalSplit, chronological_split
-from innovcal.data.financial import prices_to_log_returns
-from innovcal.data.financial import make_demo_prices
 from innovcal.data.market import clean_adjusted_prices, download_adjusted_prices
+from innovcal.data.simulation import simulate_multivariate_series
+from innovcal.data.windows import (
+    ChronologicalData,
+    Standardizer,
+    WindowDataset,
+    chronological_split,
+    partition_window_datasets,
+)
 
 __all__ = [
-    "ChronologicalSplit",
+    "ChronologicalData",
+    "Standardizer",
+    "WindowDataset",
     "chronological_split",
-    "prices_to_log_returns",
-    "make_demo_prices",
+    "partition_window_datasets",
     "clean_adjusted_prices",
     "download_adjusted_prices",
+    "simulate_multivariate_series",
 ]

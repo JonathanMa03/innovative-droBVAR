@@ -1,18 +1,23 @@
-"""Reproducible experiment workflows."""
+"""Paper-style CA-RNN comparisons."""
 
-__all__ = ["FinancialExperimentResult", "run_financial_experiment"]
+from innovcal.experiments.comparison import (
+    ExperimentResult,
+    run_four_model_comparison,
+    run_sequential_ablation,
+)
+from innovcal.experiments.reproducibility import (
+    MultiSeedResult,
+    RegimeDefinition,
+    run_frequentist_seed_comparison,
+    run_regime_seed_comparison,
+)
 
-
-def __getattr__(name: str):
-    """Avoid importing experiment workflows during low-level artifact imports."""
-    if name in __all__:
-        from innovcal.experiments.financial import (
-            FinancialExperimentResult,
-            run_financial_experiment,
-        )
-
-        return {
-            "FinancialExperimentResult": FinancialExperimentResult,
-            "run_financial_experiment": run_financial_experiment,
-        }[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+__all__ = [
+    "ExperimentResult",
+    "run_four_model_comparison",
+    "run_sequential_ablation",
+    "MultiSeedResult",
+    "RegimeDefinition",
+    "run_frequentist_seed_comparison",
+    "run_regime_seed_comparison",
+]

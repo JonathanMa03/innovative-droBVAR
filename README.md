@@ -1,204 +1,223 @@
-# innovcal
+# CA-RNN
 
-`innovcal` is a research framework for calibrated and robust multivariate financial forecasting. It separates predictable cross-asset dynamics from the joint uncertainty that remains after forecasting, then evaluates how credible that uncertainty is and how it deteriorates under distributional change.
+This repository develops the **Calibration-Aware Recurrent Neural Network (CA-RNN)** for multivariate probabilistic time-series forecasting. CA-RNN augments likelihood-based recurrent training with differentiable penalties that target calibration of the predictive distribution.
 
-**Author:** Jonathan Ma
+The project follows the methodological and experimental template of *Calibration-Aware Bayesian Learning*, adapted from classification to continuous sequential prediction. The four primary models are:
 
-## Research aim
+| Reference-paper role | Sequential model |
+|---|---|
+| Frequentist neural network | RNN |
+| Bayesian neural network | Bayesian RNN (BRNN) |
+| Calibration-aware neural network | CA-RNN |
+| Calibration-aware Bayesian network | CA-BRNN |
 
-The central question is:
+The adaptation is not a direct reuse of classification ECE. Continuous multivariate forecasts require a calibration definition for joint predictive distributions and an additional check that forecast errors are not predictable over time.
 
-> How does the choice of joint residual model affect the calibration and robustness of multivariate autoregressive forecasts under changes in volatility, dependence, and tail behavior?
+## Research questions
 
-A supporting methodological question is:
+The primary question is:
 
-> Under what residual structures and distributional shifts does diffusion-based innovation modeling provide meaningful improvements over Gaussian, Student-t, and empirical alternatives?
+> Does direct calibration-aware training improve multivariate probabilistic RNN forecasts, and does that improvement persist under temporal and distributional shift without an unacceptable loss of sharpness or predictive accuracy?
 
-The project does not assume that diffusion is always the best innovation model. Diffusion-Innovation VAR (DI-VAR) is evaluated as an unconditional generative baseline. Its extension, Conditional Diffusion-Innovation VAR (CDI-VAR), conditions standardized joint innovations on recent residual history and a causal volatility state, then applies regularized adaptive calibration to the completed VAR forecast distribution.
+The experiments address four supporting questions:
 
-## Framework
+1. How does the calibration weight affect calibration, proper predictive scores, sharpness, and point accuracy?
+2. Does calibration-aware Bayesian learning behave differently from its frequentist counterpart in sequential data?
+3. Does explicitly penalizing temporal dependence in probability integral transforms improve sequential forecast adequacy?
+4. How rapidly do the four models deteriorate under volatility, dependence, tail, nonlinear, and structural changes?
 
-The methodology has four layers:
+## Predictive model
 
-1. **Predictable dynamics:** A vector autoregression (VAR) models lagged interactions among a small set of related financial assets.
-2. **Joint residual uncertainty:** Competing innovation models learn the multivariate distribution of rolling VAR forecast errors.
-3. **Calibration:** Probabilistic forecasts are assessed for marginal, joint, and tail reliability as well as sharpness. CDI-VAR additionally updates bounded forecast-scale corrections using only outcomes observable at each rolling origin.
-4. **Stress testing:** Innovation distributions are perturbed to measure forecast and portfolio-risk degradation under plausible distributional shifts.
-
-For a return vector $y_t \in \mathbb{R}^K$,
-
-$$
-y_t = c + \sum_{\ell=1}^{p} A_\ell y_{t-\ell} + u_t,
-$$
-
-where the VAR estimates the conditional mean and a joint innovation model estimates the distribution of $u_t$. Future innovation samples are propagated recursively through the fitted VAR to generate probabilistic return, price, and portfolio paths.
-
-## Core workflow
-
-1. Collect and align adjusted prices for a small set of economically related assets.
-2. Transform prices into stationary series, using log returns by default.
-3. Split observations chronologically into training, calibration, and test periods.
-4. Fit a VAR to the training data.
-5. Produce rolling one-step-ahead errors without using future information.
-6. Fit competing joint innovation models to calibration residuals.
-7. Sample joint innovations and recursively generate multistep forecast paths.
-8. Evaluate marginal, multivariate, and tail calibration on untouched test periods.
-9. Apply volatility, dependence, downside-tail, outlier, and Wasserstein-based stresses.
-10. Measure degradation in forecast calibration and portfolio-risk estimates.
-
-## Models under comparison
-
-The conditional-mean model is held fixed wherever possible so differences can be attributed to the innovation distribution.
-
-| Model | Joint innovation specification | Role |
-|---|---|---|
-| Gaussian-VAR | Multivariate Gaussian | Conventional benchmark |
-| Student-t-VAR | Multivariate Student-t | Parametric heavy-tail benchmark |
-| Bootstrap-VAR | Joint or block residual resampling | Empirical nonparametric benchmark |
-| DI-VAR | Diffusion-generated residual vectors | Flexible generative candidate |
-| CDI-VAR | Volatility-aware conditional diffusion with adaptive calibration | Proposed conditional and calibrated model |
-
-Residual vectors are modeled jointly to preserve contemporaneous cross-asset dependence. A block bootstrap can additionally preserve short-range temporal dependence.
-
-## CDI-VAR specification
-
-CDI-VAR preserves a deliberately interpretable decomposition:
-
-1. A common VAR estimates the conditional mean.
-2. A causal EWMA recursion estimates marginal residual scale.
-3. A conditional diffusion model generates standardized joint shocks given recent standardized residuals and current log volatility.
-4. Raw shocks update the latent residual and volatility state.
-5. A separate calibration layer rescales completed VAR forecast deviations by lead time.
-
-For residual component $u_{t,j}$, the causal volatility state is
+For a multivariate series $Y_t\in\mathbb R^d$, a GRU encodes the available history:
 
 $$
-v_{t+1,j}=\lambda v_{t,j}+(1-\lambda)u_{t,j}^{2},
-\qquad
-z_{t,j}=\frac{u_{t,j}}{\sqrt{v_{t,j}}},
+h_t=\operatorname{GRU}_\theta(h_{t-1},Y_t).
 $$
 
-where $v_t$ is known before observing $u_t$. The diffusion context concatenates the most recent standardized residual vectors with normalized log volatility. During simulation, calibration never feeds back into this recursion: the state is updated using raw conditional draws, and calibration is applied only after those draws have been propagated through the VAR.
+The predictive head returns a location vector and lower-triangular scale matrix:
 
-Calibration uses genuine rolling VAR forecast outcomes from a chronologically reserved block. Raw scale estimates are shrunk toward one and bounded before deployment. At test origin $o$, adaptive updates use only forecast outcomes whose realization dates are no later than $o$. The current research configuration is:
+$$
+Y_{t+1}\mid\mathcal F_t
+\sim
+\mathcal N_d\left(\mu_\theta(h_t),L_\theta(h_t)L_\theta(h_t)^\top\right).
+$$
 
-| Parameter | Default | Interpretation |
-|---|---:|---|
-| VAR lags | 1 | Conditional-mean lag order |
-| Conditional residual lags | 5 | Standardized residual vectors supplied as diffusion context |
-| EWMA span | 60 | Causal marginal-volatility memory |
-| Diffusion steps | 50 in experiments | Reverse-process discretization |
-| Hidden dimension | 128 | Conditional denoising-network width |
-| Training epochs | 300 maximum | Early stopping selects the checkpoint |
-| Validation fraction | 0.15 | Chronological checkpoint-selection block |
-| Calibration fraction | 0.15 | Later chronological calibration block |
-| Calibration anchors | 1, 5, 20 days | Explicit forecast leads calibrated |
-| Calibration paths | 32 | Monte Carlo paths per calibration origin |
-| Shrinkage | 0.5 | Pulls raw multipliers halfway toward one |
-| Multiplier bounds | $[0.8,1.25]$ | Prevents unstable widening or sharpening |
-| Adaptive window | 12 origins | Most recent available forecast cases used online |
+Positive diagonal transformations of $L_\theta$ guarantee a positive-definite covariance matrix. The initial study uses the joint Gaussian head because every projected predictive CDF is analytic and differentiable. Heavy-tailed heads are reserved for a prespecified extension.
 
-These are frozen experimental settings, not universally optimal financial constants. Any later tuning must occur inside a new training/calibration design rather than against reported test results.
+The ordinary RNN minimizes the proper negative log-likelihood objective
 
-## Evaluation
+$$
+\mathcal L_{\mathrm{NLL}}
+=-rac{1}{T}\sum_t
+\log p_\theta(Y_{t+1}\mid\mathcal F_t).
+$$
 
-Forecast quality is evaluated through:
+## Projected multivariate calibration
 
-- prediction-interval coverage, width, and interval score,
-- probability integral transform diagnostics,
-- expected calibration error,
-- Continuous Ranked Probability Score,
-- Energy Score and other multivariate scoring rules,
-- joint downside-event frequencies,
-- Value at Risk exceedances and Expected Shortfall,
-- portfolio loss and drawdown distributions,
-- computational cost and stability across repeated runs.
+Correct univariate marginals do not guarantee a correct joint forecast. For fixed unit projection vectors $a_1,\ldots,a_R$, CA-RNN computes projected probability integral transforms
 
-Calibration and sharpness are reported together: wide intervals can achieve coverage without producing useful forecasts. Asset-level diagnostics are supplemented by joint and portfolio-level measures because marginal calibration can conceal misspecified dependence.
+$$
+U_{t,r}=F_{\theta,t,a_r}(a_r^\top Y_t).
+$$
 
-## Robustness and stress testing
+Under a correctly specified continuous forecast, $U_{t,r}$ is uniformly distributed for every projection. The projection set contains asset coordinates, an equal-weight portfolio, and reproducibly generated random directions.
 
-Robustness is treated as an evaluated property, not an automatic consequence of flexibility. The framework studies forecast sensitivity under:
+The calibration objective is a smooth Cramér--von Mises discrepancy. For grid values $q_g\in(0,1)$,
 
-- volatility inflation,
-- stronger common dependence and downside correlation,
-- heavier or asymmetric negative tails,
-- isolated asset shocks and outlier contamination,
-- historical market regimes,
-- distributions within controlled Wasserstein neighborhoods of the fitted residual law.
+$$
+\mathcal L_{\mathrm{cal}}
+=
+\frac{1}{GR}
+\sum_{g=1}^G\sum_{r=1}^R
+\left[
+\frac{1}{T}\sum_t
+\sigma\left(\frac{q_g-U_{t,r}}{\tau}\right)-q_g
+\right]^2,
+$$
 
-The stress layer asks how quickly calibration, tail coverage, and portfolio-risk estimates deteriorate as the innovation distribution moves away from its reference distribution.
+where $\sigma$ is the logistic function and $\tau>0$ controls the differentiable approximation to the empirical CDF.
 
-## Empirical and simulation studies
+## Sequential calibration
 
-The primary application uses a small multivariate system of related financial assets. Daily or weekly adjusted prices are converted to log returns, modeled through rolling forecast origins, and evaluated on chronologically later observations.
+Uniform PIT values can still contain temporal structure. The sequential extension penalizes their lagged covariance:
 
-Controlled simulations remain part of the project because they reveal when an innovation model succeeds or fails under known distributions. Current regimes include Gaussian, Student-t, mixture, and heteroskedastic innovations. Repeated simulations provide identification; the financial case study provides external validity.
+$$
+\mathcal L_{\mathrm{seq}}
+=
+\frac{1}{RK}
+\sum_{r=1}^R\sum_{k=1}^K
+\left[
+\frac{1}{T-k}\sum_{t=k+1}^T
+(U_{t,r}-1/2)(U_{t-k,r}-1/2)
+\right]^2.
+$$
 
-## Interpretation
+The full frequentist objective is
 
-The framework preserves interpretable boundaries:
+$$
+\boxed{
+\mathcal L_{\mathrm{CA\text{-}RNN}}
+=
+\mathcal L_{\mathrm{NLL}}
++\lambda_{\mathrm{cal}}\mathcal L_{\mathrm{cal}}
++\lambda_{\mathrm{seq}}\mathcal L_{\mathrm{seq}}.
+}
+$$
 
-- VAR coefficients describe lagged cross-asset relationships.
-- Residual diagnostics describe behavior left unexplained by the VAR.
-- Innovation-model comparisons identify the complexity required to represent that uncertainty.
-- Calibration diagnostics determine whether forecast probabilities are credible.
-- Stress-response curves show where reliability breaks down.
-- Portfolio metrics translate statistical failures into financial consequences.
+The main CA-RNN comparison initially sets $\lambda_{\mathrm{seq}}=0$ to match the reference paper's calibration-aware design. The sequential term is introduced as a separate ablation and extension.
 
-DI-VAR is therefore a candidate innovation specification rather than the identity of the project. A simpler model outperforming diffusion is an informative result, especially in low-dimensional or data-limited settings.
+## Bayesian formulation
 
-## Repository organization
+The BRNN places a mean-field Gaussian variational distribution $q_\phi(\theta)$ over the recurrent and predictive-head parameters. Its calibration-aware variational objective is
+
+$$
+\boxed{
+\mathcal L_{\mathrm{CA\text{-}BRNN}}(\phi)
+=
+\mathbb E_{\theta\sim q_\phi}
+\left[
+\mathcal L_{\mathrm{NLL}}(\theta)
++\lambda_{\mathrm{cal}}\mathcal L_{\mathrm{cal}}(\theta)
++\lambda_{\mathrm{seq}}\mathcal L_{\mathrm{seq}}(\theta)
+\right]
++\frac{\beta}{N}
+\operatorname{KL}\!\left(q_\phi(\theta)\Vert p(\theta)\right).
+}
+$$
+
+The implementation samples one set of recurrent weights per sequence evaluation, uses the reparameterization trick, and includes the KL term in both ordinary BRNN and CA-BRNN training. The KL weight $\beta$ must be selected on validation data.
+
+## Experimental workflow
+
+The experiment sequence deliberately parallels the calibration-aware Bayesian learning study:
+
+1. Establish controlled multivariate sequential data-generating processes.
+2. Compare RNN, BRNN, CA-RNN, and CA-BRNN using matched architectures and splits.
+3. Sweep $\lambda_{\mathrm{cal}}$ and plot calibration against predictive performance.
+4. Compare nominal and empirical probabilities through PIT and coverage reliability plots.
+5. Ablate the projected calibration and sequential PIT penalties.
+6. Evaluate the four models under progressively stronger distribution shifts.
+7. Apply the frozen workflow to four financial return series.
+
+All transformations and splits are chronological. Model selection uses validation data only. Final evaluations use untouched test observations and fresh simulation seeds. Calibration improvements are always reported with proper scores and interval widths to expose trivial widening.
+
+## Evaluation metrics
+
+The primary measures are:
+
+- projected-PIT calibration error and Kolmogorov--Smirnov statistics;
+- lagged PIT dependence;
+- nominal interval coverage and reliability curves;
+- interval width and interval score;
+- multivariate Energy Score;
+- root mean squared error;
+- numerical failures, training time, and seed sensitivity.
+
+Coordinate PITs assess marginal distributions. Portfolio and random projections probe cross-series dependence. No individual diagnostic is treated as proof of joint calibration.
+
+## Distribution shift
+
+Controlled experiments vary one mechanism at a time where possible:
+
+- marginal volatility;
+- contemporaneous dependence;
+- heavy and asymmetric tails;
+- conditional heteroskedasticity;
+- nonlinear conditional dynamics;
+- gradual drift and abrupt structural breaks.
+
+Shift experiments measure degradation curves rather than a single stressed endpoint. Stress results do not participate in hyperparameter selection.
+
+## Financial application
+
+The empirical application uses daily adjusted prices for AAPL, JPM, XOM, and WMT beginning in 2007. The cleaned series are daily log returns. These assets provide a small but economically varied multivariate system spanning major market regimes.
+
+Financial data are stored locally under `data/processed/` and are ignored by Git. Notebook 06 can use an existing clean panel or download a new one through the optional `yfinance` dependency.
+
+## Repository structure
 
 ```text
 src/innovcal/
-├── api/            # high-level workflow functions
-├── data/           # simulation, loading, and preprocessing
-├── vector_ar/      # VAR fitting, diagnostics, stability, and forecasting
-├── di_var/         # high-level DI-VAR workflow and rolling residuals
-├── cdi_var/        # conditional diffusion, EWMA state, and adaptive calibration
-├── innovations/    # Gaussian, bootstrap, and Student-t residual models
-├── diffusion/      # diffusion training and sampling
-├── forecasting/    # recursive trajectories and Monte Carlo forecasts
-├── calibration/    # coverage, PIT, ECE, and reliability
-├── evaluation/     # proper scoring rules and summary metrics
-├── dro/            # perturbations, Wasserstein tools, and stress tests
-├── experiments/    # configuration, orchestration, and artifacts
-└── plots/          # visualization utilities
+├── ca_rnn/       # models, variational layers, losses, training, prediction
+├── data/         # chronological windows, market data, controlled DGPs
+├── evaluation/   # calibration, proper scores, coverage, PIT diagnostics
+└── experiments/  # four-model comparisons, sweeps, and shift curves
+
+notebooks/
+├── 00_environment_and_tests.ipynb
+├── 01_data_and_dgps.ipynb
+├── 02_four_model_comparison.ipynb
+├── 03_calibration_weight_sweep.ipynb
+├── 04_sequential_calibration_ablation.ipynb
+├── 05_distribution_shift.ipynb
+├── 06_financial_application.ipynb
+└── 07_results_summary.ipynb
 ```
 
-## Immediate research priorities
+Notebooks contain experiment configuration, execution, and interpretation. Reusable modeling and evaluation logic belongs in `src/innovcal`.
 
-1. Freeze the current CDI-VAR specification before further test-period analysis.
-2. Complete CDI-VAR ablations for conditioning, volatility, and calibration.
-3. Add nested walk-forward evaluation across historical regimes.
-4. Quantify paired score uncertainty with dependence-aware confidence intervals.
-5. Extend controlled simulations with persistent volatility, residual dependence, and regime shifts.
-6. Report computational cost, calibration trajectories, and failure cases.
+## Installation
 
-## Notebook workflow
+From the repository root:
 
-The notebooks are intentionally thin and should be run in order:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e '.[dev,market]'
+python -m ipykernel install --user --name innovcal --display-name "Python (innovcal)"
+```
 
-1. `00_environment_and_tests.ipynb`
-2. `01a_financial_data.ipynb` (retained demo; not part of the empirical run)
-3. `01b_real_world_data.ipynb`
-4. `02_var_and_residuals.ipynb`
-5. `03_classical_innovations.ipynb`
-6. `04_di_var.ipynb`
-7. `04a_cdi_var.ipynb`
-8. `05_calibration_and_portfolio.ipynb`
-9. `06_stress_tests.ipynb`
-10. `07_simulation_validation.ipynb`
-11. `08_results.ipynb`
-12. `09_repeated_results.ipynb`
+Run the tests with:
 
-Intermediate artifacts are written to `results/notebook_cache/`. The market-data notebook downloads AAPL, JPM, XOM, and WMT adjusted closes for 2007--2025, saves the cleaned price panel to `data/processed/market_prices.csv`, and saves the canonical log-return panel to `data/processed/financial_returns.csv`.
+```bash
+python -m pytest -q
+```
 
-## Future direction
+Then open `notebooks/00_environment_and_tests.ipynb` and select the **Python (innovcal)** kernel.
 
-The framework supports later work on distributional shift. Future extensions can monitor rolling residual distributions, detect changes in covariance or tail dependence, distinguish innovation shift from changing conditional-mean dynamics, and adapt the innovation model or robustness radius online. A central implemented extension already replaces the unconditional innovation law $p(u)$ with the CDI-VAR law $p_{\theta}(z_{t+1}\mid z_{t-L+1:t},v_{t+1})$. Future work will examine richer state variables and formal shift detection.
+## Current status
 
-## Status
+The CA-RNN foundation is implemented. It includes deterministic and mean-field Bayesian GRUs, full-covariance Gaussian predictive heads, projected-PIT calibration, sequential PIT regularization, leakage-safe data utilities, controlled DGPs, sample-based evaluation, matched four-model experiments, and unit tests.
 
-This repository is under active research and development. It currently provides the real-data pipeline, leakage-aware rolling residual construction, classical innovation models, DI-VAR, CDI-VAR, rolling-origin evaluation, exact portfolio transformations, repeated-seed experiments, and shifted-realization stress tests. Ablation, nested regime evaluation, statistical comparison, and final thesis synthesis remain to be completed.
+The notebook settings are initial development settings, not frozen thesis specifications. The next step is to run smoke experiments, inspect numerical behavior, and preregister the confirmatory hyperparameter grids and seeds before producing thesis results.
