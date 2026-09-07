@@ -47,17 +47,14 @@ Likelihood-trained recurrent neural networks may be miscalibrated, while Bayesia
 model averaging is not guaranteed to remain calibrated when the likelihood, prior,
 or conditional dynamics are misspecified. This paper develops the
 Calibration-Aware Recurrent Neural Network (CA-RNN), adapting the
-calibration-aware frequentist and Bayesian learning framework of Huang, Park, and
+calibration-aware learning framework of Huang, Park, and
 Simeone to continuous multivariate forecasting. The proposed training criterion
 augments joint negative log likelihood with a differentiable discrepancy between
-projected probability integral transforms (PITs) and the uniform distribution. A
-sequential extension additionally penalizes lagged dependence in the projected
-PIT sequence. CA-RNN is a conditional stochastic forecasting model: its recurrent
+projected probability integral transforms (PITs) and the uniform distribution
+and a temporal penalty on selected lagged PIT moments. CA-RNN is a conditional
+stochastic forecasting model: its recurrent
 state parameterizes a predictive distribution from which future observations can
-be sampled. It is not presented as a latent-variable or likelihood-free deep
-generative architecture such as a diffusion model, normalizing flow, generative
-adversarial network, or variational autoencoder. The empirical design compares
-RNN, Bayesian RNN, CA-RNN, and
+be sampled. The empirical design compares RNN, Bayesian RNN, CA-RNN, and
 calibration-aware Bayesian RNN, and then extends the comparison to model
 misspecification and distribution shift. A frozen replication on a disjoint
 four-asset panel confirms a smaller projected-PIT calibration improvement, but
@@ -90,16 +87,6 @@ reliable finite-sample calibration. Bayesian learning represents parameter
 uncertainty, but its calibration guarantees depend on idealized assumptions about
 the likelihood, prior, posterior computation, and data-generating mechanism.
 
-Throughout this paper, CA-RNN is described precisely as a
-\emph{calibration-aware conditional stochastic forecasting model}. It is
-probabilistic because it estimates a full conditional law rather than only a
-conditional mean, stochastic because forecasts are obtained by drawing innovations
-from that law, and generative in the broad operational sense that it can sample
-future observations and trajectories. We do not use ``deep generative model'' as
-a model-class label: the present architecture has no learned latent diffusion,
-invertible flow, adversarial generator, or variational latent state. Its novelty
-lies in calibration-aware estimation of an RNN-indexed predictive distribution.
-
 Huang, Park, and Simeone propose calibration-aware Bayesian neural networks
 (CA-BNNs), combining a data-dependent calibration regularizer with the
 data-independent KL regularizer of variational Bayesian learning
@@ -128,37 +115,14 @@ This question is decomposed into three focused empirical questions:
     \item Across the prespecified calibration-weight grid, what tradeoff arises
     between projected calibration error and strictly proper predictive scores,
     marginal interval score, and point-forecast error?
-    \item Conditional on the marginal projected-PIT penalty, does adding the
-    lagged PIT-product penalty reduce held-out sequential calibration error, and
-    how does it affect Energy Score, marginal interval score, coverage, and
-    point-forecast error relative to marginal CA--RNN and the likelihood-only
-    RNN?
-    \item Does sequential CA--RNN add forecast value beyond the likelihood-only
+    \item What does removing CA--RNN's temporal PIT-moment penalty reveal about
+    its effect on held-out sequential calibration error, Energy Score, marginal
+    interval score, coverage, and point-forecast error?
+    \item Does CA--RNN add forecast value beyond the likelihood-only
     RNN and VAR--GARCH on the development and frozen external asset panels, and
     how does its performance relative to the RNN vary across four chronological
     market regimes, as measured by projected and sequential calibration, Energy
     Score, interval score, coverage, and point-forecast error?
-\end{enumerate}
-
-\subsection{Contributions}
-
-The contributions are methodological, theoretical, and empirical:
-\begin{enumerate}
-    \item a continuous-outcome analogue of calibration-aware neural training based
-    on differentiable projected PIT discrepancies;
-    \item an extension targeting temporal dependence in forecast PIT sequences;
-    \item a variational Bayesian recurrent formulation combining calibration and
-    KL regularization;
-    \item a matched four-model experiment that parallels
-    \cite{huang2024cabl}; and
-    \item a controlled study of calibration degradation under misspecification and
-    distribution shift, including a multivariate financial application;
-    \item comparison with a volatility-aware traditional benchmark; and
-    \item a frozen external-panel replication separating developmental findings
-    from confirmatory evidence; and
-    \item a theoretical account of the negative confirmatory result through the
-    failure of finite moments to identify the distribution, a PIT-dependence
-    counterexample, and exact proper-score regret representations.
 \end{enumerate}
 
 \subsection{Scope and non-claims}
@@ -549,7 +513,7 @@ follow because the objective contains no other grid values, projections,
 conditioning events, or observations outside $B$.
 \end{proof}
 
-\subsection{Sequential calibration loss}
+\subsection{Temporal PIT-moment loss}
 
 PIT uniformity does not rule out forecastable temporal structure. With
 $\widetilde U_{t,r}=U_{t,r}-1/2$ and maximum lag $K$, define
@@ -566,7 +530,7 @@ Under the ideal conditional forecast, the population quantities targeted by
 \eqref{eq:seq-loss} are zero by the sequential PIT theorem. The converse is not
 true: finitely many zero autocovariances do not establish independence.
 
-\begin{proposition}[Exact scope of the sequential loss]
+\begin{proposition}[Exact scope of the temporal PIT-moment loss]
 Suppose $|B|>K$. Then $\mathcal L_{\mathrm{seq}}(\theta;B)=0$ if and only if
 \[
  \frac{1}{|B|-k}\sum_{t\in B:k\text{ available}}
@@ -605,9 +569,9 @@ The proposed frequentist objective is
 \right\}.
 \label{eq:ca-rnn}
 \end{equation}
-The replication experiment initially fixes $\lambda_{\mathrm{seq}}=0$, so that
-\eqref{eq:ca-rnn} follows the source paper's task-loss-plus-calibration structure.
-The sequential term is evaluated separately as a proposed extension.
+Both calibration terms in \eqref{eq:ca-rnn} define CA--RNN. The restriction
+$\lambda_{\mathrm{seq}}=0$ is used only as a loss-component ablation that removes
+the temporal PIT-moment penalty.
 
 \subsection{Bayesian CA-RNN objective}
 
@@ -645,7 +609,7 @@ The calibration-aware variational objective is
 &+\frac{\beta}{N}\KL(q_\phi(\theta)\|p(\theta)).
 \label{eq:ca-brnn}
 \end{align}
-This is the sequential continuous-outcome analogue of the CA-BNN free energy in
+This is the continuous-outcome recurrent analogue of the CA-BNN free energy in
 \cite{huang2024cabl}. The factor $1/N$ matches the mean per-observation likelihood
 convention. The weight $\beta$ remains a validation-selected generalized-Bayes
 hyperparameter.
@@ -1104,9 +1068,11 @@ The confirmatory protocol is stored separately in
 disjoint MSFT--BAC--CVX--COST panel, the date boundary, transformations, split,
 architecture, loss weights, training and forecast seeds, primary outcomes,
 baseline definitions, bootstrap procedure, and failure reporting. The sole
-primary contrast is sequential CA-RNN minus RNN across ten matched optimization
+primary contrast is CA-RNN minus RNN across ten matched optimization
 seeds; conventional-baseline comparisons are secondary. Any post-outcome change
 creates an exploratory analysis rather than replacing the frozen result.
+The archived protocol retains the model label used when it was frozen; that label
+refers to the identical projected-plus-temporal objective now called CA--RNN.
 
 \subsection{Calibration-weight experiment}
 
@@ -1120,7 +1086,7 @@ $\lambda_{\mathrm{cal}}$. The paired panels will contain:
 The result of interest is a Pareto relationship, not calibration alone. Separate
 curves are required for CA-RNN and CA-BRNN.
 
-\subsection{Sequential ablation}
+\subsection{Temporal-penalty ablation}
 
 The minimum ablation is:
 \begin{table}[ht]
@@ -1131,8 +1097,8 @@ The minimum ablation is:
 Specification & NLL & $\mathcal L_{\mathrm{cal}}$ & $\mathcal L_{\mathrm{seq}}$ \\
 \midrule
 RNN & \checkmark & & \\
-CA-RNN & \checkmark & \checkmark & \\
-CA-RNN (sequential) & \checkmark & \checkmark & \checkmark \\
+CA-RNN (temporal penalty removed) & \checkmark & \checkmark & \\
+CA-RNN & \checkmark & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1196,7 +1162,7 @@ a pristine preregistered confirmatory experiment.
 The lambda sweep, ablation, original-panel ten-seed study, rolling windows, and
 synthetic stress curve are developmental or internal-validation evidence. They
 condition on a specification informed by earlier results. The external-panel
-replication is confirmatory for its single primary contrast: sequential CA-RNN
+replication is confirmatory for its single primary contrast: CA-RNN
 minus RNN on MSFT, BAC, CVX, and COST under the protocol frozen in
 \texttt{docs/confirmatory\_protocol.md}. Its traditional-baseline comparisons
 were prespecified but secondary. Inferential intervals quantify test-origin and
@@ -1244,7 +1210,7 @@ intervals. The diagnostic figures include:
 
 The implementation tests cover tensor dimensions, covariance
 positive-definiteness, loss evaluation, forecasting, chronological data handling,
-traditional baselines, and paired-bootstrap identities. Twenty-three automated
+traditional baselines, and paired-bootstrap identities. Twenty-four automated
 tests pass. The notebooks also
 completed the simulation, shift, financial, optimization-seed, and rolling-regime
 workflows. Successful execution establishes implementation consistency but is not
@@ -1252,13 +1218,20 @@ itself statistical validation.
 
 \subsection{Four-model comparison}
 
-The initial matched comparison showed that calibration-aware objectives alter the
-forecast distribution but do not yield uniform dominance. CA-RNN made only a
-small projected-calibration improvement over RNN, while CA-BRNN did not improve
-on BRNN. Bayesian averaging did not remove the calibration--score tradeoff. The
-frequentist RNN, CA-RNN, and sequential
-CA-RNN therefore form the focused empirical comparison; BRNN and CA-BRNN remain
-supporting replications of the source paper's model matrix.
+The refreshed matched nonlinear simulation showed that calibration-aware
+objectives alter the forecast distribution but do not yield uniform dominance.
+Relative to RNN, CA-RNN slightly reduced RMSE (0.9368 to 0.9334), Energy Score
+(1.2354 to 1.2348), and mean absolute projected-PIT autocorrelation (0.0733 to
+0.0674). It increased interval score (3.8771 to 3.9297) and projected-PIT
+calibration error (0.001224 to 0.001455), despite improving nominal coverage
+from 0.9167 to 0.9375 only in the sense of producing wider intervals; both
+coverage rates exceed the 0.90 target. Bayesian averaging did not remove this
+calibration--score tradeoff: CA-BRNN had worse RMSE, Energy Score, interval
+score, and projected calibration than BRNN, although its projected-PIT temporal
+dependence was slightly lower. RNN and CA-RNN therefore form the focused
+empirical comparison; BRNN and CA-BRNN remain supporting replications of the
+source paper's model matrix. These are single-realization developmental results
+and are not treated as inferential evidence.
 
 \subsection{Calibration-weight sensitivity}
 
@@ -1270,25 +1243,37 @@ retained as a developmental compromise rather than selected to maximize a final
 test result. Calibration improvement alone is therefore not interpreted as a
 better probabilistic forecast.
 
-\subsection{Sequential calibration ablation}
+\subsection{Temporal-penalty ablation}
 
-Relative to marginal CA-RNN, the sequential specification consistently repaired
-predictive performance. In the ten-seed financial experiment it improved MSE,
-Energy Score, interval score, nominal-coverage error, and projected-PIT
-calibration for every seed. It widened intervals, but simultaneous coverage and
-interval-score improvements show that the result is not merely unpenalized
-widening. Improvements in PIT temporal dependence were smaller and generally
-unresolved. The sequential penalty is empirically important, but the evidence
-does not establish PIT independence.
+The temporal term has regime- and design-dependent effects. In the refreshed
+single-realization heteroskedastic simulation, removing the temporal penalty
+gave Energy Score 1.2101, interval score 3.9236, RMSE 0.9222, projected-PIT
+calibration error 0.000770, and mean absolute projected-PIT autocorrelation
+0.05182. The default CA-RNN temporal weight of 2,000 instead gave 1.2153,
+3.9409, 0.9258, 0.001046, and 0.05132, respectively. Thus the temporal term
+slightly reduced the diagnostic it directly targets, but worsened the proper
+scores, point error, projected uniformity, and absolute nominal-coverage error
+in this controlled run. Increasing the weight further continued to reduce PIT
+autocorrelation while generally worsening the other metrics.
+
+The ten-seed financial ablation has a different ordering. There, CA-RNN improved
+MSE, Energy Score, interval score, nominal-coverage error, and projected-PIT
+calibration relative to temporal-penalty removal for every matched seed. It
+widened intervals, but simultaneous coverage and interval-score improvements
+show that the result is not merely unpenalized widening. Improvements in PIT
+temporal dependence were smaller and generally unresolved. Taken together, the
+experiments show that the penalty changes serial calibration behavior and can
+repair costs induced by marginal calibration in financial data, but does not
+provide a general predictive improvement or establish PIT independence.
 
 \subsection{Misspecification and distribution shift}
 
 The frozen-model experiment jointly increased innovation scale and common
 correlation from severity zero to one. All specifications deteriorated. At zero,
 RNN had Energy Score 1.2022, interval score 3.8595, and projected calibration
-error 0.000866, compared with 1.2039, 3.9311, and 0.001345 for sequential CA-RNN.
+error 0.000866, compared with 1.2039, 3.9311, and 0.001345 for CA-RNN.
 At maximum severity, the ordering reversed: RNN obtained 2.3789, 10.5168, and
-0.009528, while sequential CA-RNN obtained 2.3474, 10.0759, and 0.007717. This
+0.009528, while CA-RNN obtained 2.3474, 10.0759, and 0.007717. This
 single-seed combined stress is developmental evidence rather than an isolated
 causal test of scale or dependence. Absolute levels and paired degradation are
 considered together because a worse nominal starting point can mechanically
@@ -1297,13 +1282,13 @@ reduce measured deterioration.
 \subsection{Financial results}
 
 Table~\ref{tab:seed-results} reports averages over ten matched optimization seeds
-and 957 forecast origins on the original financial test period. Sequential CA-RNN
+and 957 forecast origins on the original financial test period. CA-RNN
 reduced projected-PIT calibration error relative to RNN for all ten seeds, from
 $0.001438$ to $0.001225$, or approximately 15\%. Its Energy Score and RMSE were
 worse for all ten seeds. Its mean interval score was slightly lower, but the
 paired difference remained unresolved, with a 95\% hierarchical interval of
 $[-0.0191,0.0136]$. In contrast, its coverage-error difference was $-0.00528$
-with interval $[-0.00815,-0.00136]$, favoring sequential CA-RNN.
+with interval $[-0.00815,-0.00136]$, favoring CA-RNN.
 
 \begin{table}[ht]
 \centering
@@ -1315,17 +1300,19 @@ is better except for coverage, whose nominal target is 0.90.}
 Model & RMSE & Energy & Interval & Coverage & PIT calibration \\
 \midrule
 RNN & 0.9399 & 1.1450 & 4.0855 & 0.8717 & 0.001438 \\
-CA-RNN & 0.9504 & 1.1563 & 4.1191 & 0.8666 & 0.001306 \\
-Sequential CA-RNN & 0.9479 & 1.1531 & 4.0816 & 0.8770 & 0.001225 \\
+CA-RNN (temporal penalty removed) & 0.9504 & 1.1563 & 4.1191 & 0.8666 & 0.001306 \\
+CA-RNN & 0.9479 & 1.1531 & 4.0816 & 0.8770 & 0.001225 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Plain CA-RNN isolates why the extension matters. Against RNN it had worse MSE,
+The temporal-penalty-removal ablation isolates the contribution of that objective
+component. Against RNN it had worse MSE,
 Energy Score, interval score, and coverage error despite lower projected-PIT
-error. Sequential CA-RNN then reduced MSE by $0.00465$, Energy Score by
+error. CA-RNN then reduced MSE by $0.00465$, Energy Score by
 $0.00317$, interval score by $0.03749$, and coverage error by $0.01032$ relative
-to CA-RNN; every corresponding hierarchical interval excluded zero. It repairs a
+to the temporal-penalty-removal ablation; every corresponding hierarchical
+interval excluded zero. It repairs a
 substantial part, but not all, of the cost of marginal calibration.
 
 \subsection{Conventional-baseline results}
@@ -1336,7 +1323,7 @@ optimizations converged. The fixed-covariance Gaussian VAR was poorly calibrated
 adding marginal GARCH scales and resampling joint standardized residuals reduced
 its interval score from 4.3993 to 4.0298 and projected-PIT error from 0.003388 to
 0.000453. VAR--GARCH had better interval score, coverage error, and projected-PIT
-calibration than sequential CA-RNN. It also had slightly better RMSE and Energy
+calibration than CA-RNN. It also had slightly better RMSE and Energy
 Score. The comparison attributes much of the neural models' remaining uncertainty
 error to unmodeled conditional volatility rather than an insufficiently flexible
 conditional mean alone.
@@ -1351,13 +1338,13 @@ ten-seed means; the traditional model is fitted once. Coverage targets 0.90.}
 Model & RMSE & Energy & Interval & Coverage & PIT calibration \\
 \midrule
 RNN & 0.9399 & 1.1450 & 4.0855 & 0.8717 & 0.001438 \\
-Sequential CA-RNN & 0.9479 & 1.1531 & 4.0816 & 0.8770 & 0.001225 \\
+CA-RNN & 0.9479 & 1.1531 & 4.0816 & 0.8770 & 0.001225 \\
 VAR--GARCH bootstrap & 0.9452 & 1.1495 & \textbf{4.0298} & \textbf{0.8989} & \textbf{0.000453} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Against sequential CA-RNN, the paired hierarchical intervals favored
+Against CA-RNN, the paired hierarchical intervals favored
 VAR--GARCH for MSE, Energy Score, interval score, coverage error, and projected-PIT
 calibration. These intervals repeat the fixed traditional forecast across neural
 seed slots; they represent test-origin dependence and neural optimization
@@ -1420,13 +1407,13 @@ means; coverage targets 0.90.}
 Model & RMSE & Energy & Interval & Coverage & PIT cal. & PIT dep. \\
 \midrule
 RNN & 0.8609 & 1.0677 & 3.7766 & 0.8703 & 0.000783 & 0.03008 \\
-Sequential CA-RNN & 0.8694 & 1.0778 & 3.7998 & 0.8683 & 0.000735 & 0.03378 \\
+CA-RNN & 0.8694 & 1.0778 & 3.7998 & 0.8683 & 0.000735 & 0.03378 \\
 VAR--GARCH bootstrap & 0.8646 & 1.0713 & 3.7528 & 0.8928 & 0.000491 & 0.03270 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-For the prespecified primary contrast, sequential CA-RNN reduced projected-PIT
+For the prespecified primary contrast, CA-RNN reduced projected-PIT
 calibration error by $0.0000473$, with 95\% interval
 $[-0.000163,-0.000012]$. This targeted effect therefore replicated on disjoint
 assets. It did not yield a better predictive distribution overall:
@@ -1438,7 +1425,7 @@ autocorrelation was also worse by $0.00370$, with interval
 $[0.00005,0.00455]$. Thus the sequential objective did not improve out-of-sample
 temporal PIT adequacy despite targeting finite-lag moments during training.
 
-The secondary comparison again favored VAR--GARCH over sequential CA-RNN for
+The secondary comparison again favored VAR--GARCH over CA-RNN for
 MSE, Energy Score, interval score, coverage error, and projected calibration; all
 five intervals excluded zero. The RNN retained better MSE and Energy Score than
 VAR--GARCH, whereas VAR--GARCH had better interval score, coverage error, and
@@ -1447,7 +1434,7 @@ therefore supplied by different model components in this application.
 
 \subsection{Rolling market-regime results}
 
-Table~\ref{tab:regime-results} gives five-seed means. Sequential CA-RNN had lower
+Table~\ref{tab:regime-results} gives five-seed means. CA-RNN had lower
 projected-PIT calibration error than RNN in all four regimes. Hierarchical
 intervals favored it in the pre-pandemic, inflation/tightening, and recent
 windows; the pandemic difference was unresolved. In contrast, its Energy Score
@@ -1455,13 +1442,13 @@ was lower only pre-pandemic, where the difference was unresolved.
 
 \begin{table}[ht]
 \centering
-\caption{Five-seed regime means for RNN (R) and sequential CA-RNN (S).}
+\caption{Five-seed regime means for RNN (R) and CA-RNN (C).}
 \label{tab:regime-results}
 \begin{tabular}{lrrrrrr}
 \toprule
 & \multicolumn{2}{c}{Energy Score} & \multicolumn{2}{c}{Interval score}
 & \multicolumn{2}{c}{PIT calibration} \\
-Regime & R & S & R & S & R & S \\
+Regime & R & C & R & C & R & C \\
 \midrule
 Pre-pandemic & 0.8629 & 0.8626 & 3.1123 & 3.1027 & 0.001914 & 0.001503 \\
 Pandemic & 1.5016 & 1.5029 & 5.7371 & 5.6629 & 0.002995 & 0.002883 \\
@@ -1471,18 +1458,18 @@ Recent & 1.0237 & 1.0289 & 3.6648 & 3.6935 & 0.001224 & 0.000904 \\
 \end{tabular}
 \end{table}
 
-The interval-score ordering is regime-dependent. Sequential CA-RNN significantly
+The interval-score ordering is regime-dependent. CA-RNN significantly
 outperformed RNN during the pandemic and inflation/tightening periods, was
 unresolved pre-pandemic, and significantly underperformed recently. Coverage
-error similarly favored sequential CA-RNN pre-pandemic and during
+error similarly favored CA-RNN pre-pandemic and during
 inflation/tightening, was unresolved during the pandemic, and favored RNN
 recently. These reversals directly answer the distribution-shift question.
 
-Across regimes, sequential CA-RNN improved Energy Score and interval score over
-marginal CA-RNN directionally in four of four windows. These improvements were
+Across regimes, CA-RNN improved Energy Score and interval score over the
+temporal-penalty-removal ablation directionally in four of four windows. These improvements were
 resolved in the pandemic, inflation/tightening, and recent windows, while the
 pre-pandemic differences were unresolved. Projected calibration improved over
-marginal CA-RNN in three of four windows.
+the temporal-penalty-removal ablation in three of four windows.
 
 \begin{figure}[ht]
 \centering
@@ -1506,15 +1493,15 @@ score decomposes exactly as
  +\underbrace{20(Y_{t,j}-U_{t,j})\ind\{Y_{t,j}>U_{t,j}\}}_{\text{upper-tail penalty}}.
  \label{eq:interval-decomposition}
 \end{equation}
-Table~\ref{tab:interval-mechanism} reports the mean sequential-CA-RNN-minus-RNN
+Table~\ref{tab:interval-mechanism} reports the mean CA-RNN-minus-RNN
 difference in each component. The arithmetic identity in
 \eqref{eq:interval-decomposition} means the final column is exactly the sum of the
 preceding three columns.
 
 \begin{table}[ht]
 \centering
-\caption{Decomposition of the interval-score difference between sequential
-CA-RNN and RNN. Negative total differences favor sequential CA-RNN.}
+\caption{Decomposition of the interval-score difference between CA-RNN and RNN.
+Negative total differences favor CA-RNN.}
 \label{tab:interval-mechanism}
 \begin{tabular}{lrrrr}
 \toprule
@@ -1530,13 +1517,13 @@ Recent & $-0.0185$ & $+0.0268$ & $+0.0205$ & $+0.0287$ \\
 
 The pandemic and inflation/tightening improvements arise through beneficial
 widening: the added width is more than offset by reductions in both tail-miss
-penalties. In the recent period, sequential CA-RNN instead produces slightly
+penalties. In the recent period, CA-RNN instead produces slightly
 narrower intervals and larger penalties in both tails. Before the pandemic, the
 mechanism is different again: reduced width outweighs the additional tail
 penalties, yielding a small and statistically unresolved sharpness benefit.
 
 The stress-period effect is concentrated in forecasts preceded by elevated
-volatility. Sequential CA-RNN's interval-score differences in the pandemic are
+volatility. CA-RNN's interval-score differences in the pandemic are
 $+0.0198$, $-0.0725$, and $-0.1705$ for low-, medium-, and high-volatility
 origins, respectively. During inflation/tightening they are $+0.0209$, $-0.0562$,
 and $-0.1045$. By contrast, the recent-period differences are positive in every
@@ -1555,8 +1542,9 @@ interpretation. Pandemic volatility is 1.26 times its training level and the mea
 standardized fourth moment is 29.87. The corresponding values are 1.00 and 12.08
 during inflation/tightening, versus 0.83 and 6.37 recently. The recent period has
 the largest standardized location shift and correlation shift of the four
-windows. Thus sequential calibration appears most useful for persistent scale and
-tail errors, while lower-volatility location or dependence changes remain harder.
+windows. Thus the complete CA-RNN objective appears most useful for persistent
+scale and tail errors, while lower-volatility location or dependence changes
+remain harder.
 
 Importantly, projected and coordinate PIT calibration still improve recently even
 as 90\% interval performance deteriorates. The calibration loss averages 19 CDF
@@ -1572,7 +1560,7 @@ confirmation.
 \includegraphics[width=0.82\textwidth]{../results/interval_mechanisms/interval_score_decomposition.png}%
 }{\fbox{\parbox{0.8\textwidth}{Run notebook 10 to generate the interval-score
 decomposition.}}}
-\caption{Exact decomposition of sequential-CA-RNN-minus-RNN interval-score
+\caption{Exact decomposition of CA-RNN-minus-RNN interval-score
 differences. Tail reductions offset widening in the pandemic and
 inflation/tightening periods, but not in the recent period.}
 \label{fig:interval-mechanism}
@@ -1584,9 +1572,13 @@ inflation/tightening periods, but not in the recent period.}
 
 Four conclusions follow. First, a marginal calibration penalty is insufficient
 for dependent multivariate forecasting: it can improve its targeted diagnostic
-while harming proper scores and nominal coverage. Second, the sequential loss is
-not cosmetic within the developmental ablation; it improves marginal CA-RNN and
-recovers part of its predictive-performance loss. Third, its projected-calibration
+while harming proper scores and nominal coverage. Second, the temporal PIT-moment
+loss produces a genuine but narrow intervention on serial PIT moments. It
+recovered part of the temporal-penalty-removal model's predictive-performance
+loss in the ten-seed financial experiment, but the refreshed controlled
+simulation found only a small temporal-dependence reduction accompanied by worse
+point error, proper scores, projected calibration, and coverage error. Its value
+is therefore data- and regime-dependent rather than automatic. Third, CA-RNN's projected-calibration
 effect transfers to a disjoint asset panel, but its developmental interval and
 coverage improvements do not: the frozen replication instead favors RNN on all
 three proper or accuracy-oriented scores and finds no resolved coverage benefit.
@@ -1597,7 +1589,7 @@ regularization in these data.
 The disagreement between Energy Score and interval score is substantively useful.
 Energy Score assesses the multivariate predictive distribution, whereas the
 marginal interval score rewards coverage and sharpness asset by asset. During the
-pandemic and inflation/tightening periods, sequential CA-RNN improves the latter
+pandemic and inflation/tightening periods, CA-RNN improves the latter
 without improving the former. Its practical value therefore depends on whether an
 application prioritizes marginal risk intervals or overall multivariate accuracy.
 The confirmatory evidence narrows this claim further: lower projected-PIT grid
@@ -1615,24 +1607,39 @@ scores---is therefore compatible with the objectives rather than paradoxical.
 
 \subsection{Limitations}
 
-Limitations include finite projection sets, two small four-asset panels, one-step horizons,
-sensitivity to smoothing and batching, mean-field variational misspecification, a
-Gaussian predictive head, and limited ability to establish conditional
-calibration from finite dependent sequences. Regime labels are calendar-based and
-partly specified after broader exposure to the data. The hierarchical bootstrap
-represents seed and within-window sampling variation but conditions on the
-architecture, tuning path, assets, projections, and chosen windows. Conventional
-baselines are fitted once per panel, so their reported hierarchical comparisons do
-not represent baseline parameter-estimation variability. Moving-block
-resampling can distort PIT autocorrelation at artificial block boundaries, so
-temporal-dependence intervals are interpreted cautiously. Finally, improved
-finite-projection calibration does not imply full joint or conditional
-calibration. The original-panel VAR--GARCH diagnostics are also in-sample and
-descriptive: several standardized-residual Ljung--Box tests reject, and their
-$p$-values are not adjusted for fitted parameters or multiple testing. Its
-comparative advantage should therefore be attributed primarily to effective
-conditional-volatility filtering and joint empirical innovation resampling, not
-to complete dynamic specification.
+The central limitation concerns what the calibration objective can identify.
+CA-RNN evaluates a finite set of smoothed projected-PIT moments, estimated from
+dependent mini-batches. Its conclusions therefore depend on the selected
+projections, grid, smoothing parameter, and batching scheme. Even a small value
+of this empirical loss cannot establish full joint or history-conditional
+calibration. The temporal term narrows one part of this gap by targeting selected
+lagged covariances, but finite zero autocovariances do not imply PIT independence.
+Moving-block resampling introduces an additional complication because artificial
+block boundaries can affect autocorrelation estimates; the corresponding
+uncertainty intervals are consequently interpreted as diagnostic rather than
+definitive.
+
+The empirical scope is also deliberately limited. The financial evidence comes
+from two four-asset panels and one-step-ahead forecasts, while the chronological
+regimes are calendar-based and were partly formulated after broader exposure to
+the development data. The frozen external panel reduces, but does not eliminate,
+dependence on choices of assets, architecture, tuning path, projections, and
+evaluation windows. Similarly, the hierarchical bootstrap represents variation
+across neural optimization seeds and dependent forecast origins conditional on
+those design choices. Because each conventional benchmark is fitted once per
+panel, its reported comparisons do not integrate over baseline parameter-
+estimation uncertainty.
+
+Finally, the neural predictive law is Gaussian and does not explicitly encode
+the persistent conditional volatility or heavy tails characteristic of financial
+returns. This matters for interpretation: VAR--GARCH's advantage may reflect a
+better uncertainty specification rather than a general advantage of linear over
+recurrent conditional-mean dynamics. The original-panel benchmark is itself not
+fully dynamically specified. Its diagnostics are in-sample and descriptive,
+several Ljung--Box tests on standardized residual levels reject, and the
+$p$-values are not adjusted for fitted parameters or multiple testing. Its strong
+performance is therefore attributed primarily to effective volatility filtering
+and joint empirical innovation resampling, not to complete model adequacy.
 
 \subsection{Future work}
 
@@ -1652,12 +1659,22 @@ than only covariance of centered PITs. Either extension must be tuned on
 validation data and evaluated with global calibration and proper scores to avoid
 improving one nominal interval at the expense of the rest of the distribution.
 
-Further work should test new frequencies, forecast horizons, broader asset
+A particularly relevant extension is a volatility-aware CA-RNN. The recurrent
+state could parameterize time-varying marginal scales and a structured dynamic
+correlation matrix, with Student-$t$ or mixture innovations replacing the current
+Gaussian head. This would test whether calibration-aware estimation adds value
+after conditional heteroskedasticity and heavy tails have been modeled directly,
+rather than requiring the calibration penalty to compensate for their omission.
+It is intentionally left outside the present study because a defensible
+evaluation would require a factorial comparison of volatility-aware RNN and
+volatility-aware CA-RNN, alongside their current Gaussian counterparts. Without
+that control, improvements could not be attributed separately to volatility
+modeling, the innovation distribution, or calibration-aware training.
+
+Further work should also test new frequencies, forecast horizons, broader asset
 universes, and genuinely future calendar periods. Conditional calibration
-diagnostics could use volatility, market return,
-and liquidity states fixed before evaluation. Heavy-tailed or mixture predictive
-heads may separate deficiencies in the Gaussian output law from deficiencies in
-the calibration objective. Finally, uncertainty for PIT dependence should use a
+diagnostics could use volatility, market return, and liquidity states fixed
+before evaluation. Finally, uncertainty for PIT dependence should use a
 procedure that avoids correlations introduced at moving-block boundaries.
 
 \section{Conclusion}
@@ -1665,22 +1682,28 @@ procedure that avoids correlations introduced at moving-block boundaries.
 This paper adapts calibration-aware Bayesian learning to continuous multivariate
 recurrent forecasting and introduces a temporal calibration penalty based on
 lagged projected-PIT covariance. Calibration-aware training reliably changes
-forecast calibration, but marginal regularization alone incurs predictive costs.
-The sequential extension improves the marginal CA-RNN specification in the
-developmental ablation and produces lower projected-PIT calibration error than a
-likelihood-trained RNN across optimization seeds, chronological regimes, and a
-frozen disjoint-asset replication.
+forecast calibration, but projected calibration alone incurs predictive costs.
+The temporal PIT-moment component improves the corresponding loss-component
+ablation in the ten-seed financial study, but not across every metric in the
+controlled simulation. The complete CA-RNN nevertheless produces lower
+projected-PIT calibration error than a likelihood-trained RNN across financial
+optimization seeds, chronological regimes, and a frozen disjoint-asset
+replication; the same ordering does not hold in the single-realization nonlinear
+simulation.
 
 The method is not uniformly superior. In the confirmatory experiment it has worse
 MSE, Energy Score, interval score, and temporal PIT dependence than RNN, while its
 coverage-error difference is unresolved. VAR--GARCH also outperforms it on the
 principal uncertainty metrics in both asset panels. The contribution is therefore
-not a dominance claim, nor evidence that the present sequential penalty achieves
+not a dominance claim, nor evidence that the temporal PIT-moment penalty achieves
 PIT independence. It is a controlled demonstration that calibration-aware
 training can reproducibly improve its targeted finite-projection diagnostic while
 failing to improve---and sometimes worsening---proper scores and sequential
-adequacy. Strong volatility-aware baselines and external confirmation are thus
-essential when evaluating calibration-aware neural forecasts.
+adequacy. Its relative advantage under the synthetic frozen stress appears only
+after scale and dependence shifts become material, providing evidence of a
+robustness crossover rather than nominal dominance. Strong volatility-aware
+baselines, ablation across data-generating settings, and external confirmation
+are thus essential when evaluating calibration-aware neural forecasts.
 
 \newpage
 \appendix

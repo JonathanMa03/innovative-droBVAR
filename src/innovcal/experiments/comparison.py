@@ -49,8 +49,7 @@ def run_four_model_comparison(
     model_config: CARNNConfig | None = None,
     training_config: TrainingConfig | None = None,
     lambda_cal: float = 10.0,
-    lambda_seq: float = 0.0,
-    sequential_extension_weight: float | None = None,
+    lambda_seq: float = 2000.0,
     n_forecast_samples: int = 500,
     device: str = "cpu",
 ) -> ExperimentResult:
@@ -72,23 +71,6 @@ def run_four_model_comparison(
         "CA-RNN": (CARNN, lambda_cal, lambda_seq),
         "CA-BRNN": (BayesianCARNN, lambda_cal, lambda_seq),
     }
-    if sequential_extension_weight is not None:
-        if sequential_extension_weight <= 0:
-            raise ValueError("sequential_extension_weight must be positive")
-        specifications.update(
-            {
-                "CA-RNN sequential": (
-                    CARNN,
-                    lambda_cal,
-                    sequential_extension_weight,
-                ),
-                "CA-BRNN sequential": (
-                    BayesianCARNN,
-                    lambda_cal,
-                    sequential_extension_weight,
-                ),
-            }
-        )
     context, target = _test_arrays(test)
     rows, histories, models, forecasts = [], {}, {}, {}
     for name, (model_class, cal_weight, seq_weight) in specifications.items():
@@ -168,7 +150,7 @@ def lambda_sweep(
     return pd.DataFrame(rows)
 
 
-def run_sequential_ablation(
+def run_temporal_penalty_ablation(
     values: np.ndarray,
     sequential_weights: list[float],
     calibration_weight: float = 100.0,
@@ -178,7 +160,7 @@ def run_sequential_ablation(
     n_forecast_samples: int = 500,
     device: str = "cpu",
 ) -> ExperimentResult:
-    """Fit a matched fixed-epoch RNN/CA-RNN sequential-loss ablation.
+    """Fit a matched fixed-epoch temporal-loss ablation for CA-RNN.
 
     All specifications start from identical parameters, see observations in the
     same order, train for the same number of epochs, and use common predictive
@@ -199,9 +181,16 @@ def run_sequential_ablation(
     base = replace(base, early_stopping=False, selection_metric="nll")
     projections = make_projection_matrix(dimension, seed=base.seed)
     context, target = _test_arrays(test)
-    specifications = [("RNN", 0.0, 0.0), ("CA-RNN", calibration_weight, 0.0)]
+    specifications = [
+        ("RNN", 0.0, 0.0),
+        ("CA-RNN (temporal penalty removed)", calibration_weight, 0.0),
+    ]
     specifications.extend(
-        (f"CA-RNN sequential ({weight:g})", calibration_weight, weight)
+        (
+            "CA-RNN" if weight == 2000.0 else f"CA-RNN (temporal weight {weight:g})",
+            calibration_weight,
+            weight,
+        )
         for weight in sequential_weights
         if weight > 0
     )

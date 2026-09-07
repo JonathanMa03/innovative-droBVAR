@@ -59,8 +59,7 @@ def run_shift_curve(
         model_config=CARNNConfig(config.dimension),
         training_config=training_config,
         lambda_cal=lambda_cal,
-        lambda_seq=0.0,
-        sequential_extension_weight=sequential_weight,
+        lambda_seq=sequential_weight or 0.0,
         n_forecast_samples=n_forecast_samples,
         device=device,
     )
@@ -100,7 +99,9 @@ def run_shift_curve(
                     "model": name,
                     "model_index": model_index,
                     "lambda_cal": lambda_cal if name.startswith("CA-") else 0.0,
-                    "lambda_seq": sequential_weight if "sequential" in name else 0.0,
+                    "lambda_seq": (
+                        sequential_weight if name in {"CA-RNN", "CA-BRNN"} else 0.0
+                    ),
                     "nll": nll,
                     **metrics,
                 }

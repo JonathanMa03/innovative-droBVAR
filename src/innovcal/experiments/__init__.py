@@ -3,7 +3,7 @@
 from innovcal.experiments.comparison import (
     ExperimentResult,
     run_four_model_comparison,
-    run_sequential_ablation,
+    run_temporal_penalty_ablation,
 )
 from innovcal.experiments.reproducibility import (
     MultiSeedResult,
@@ -15,7 +15,7 @@ from innovcal.experiments.reproducibility import (
 __all__ = [
     "ExperimentResult",
     "run_four_model_comparison",
-    "run_sequential_ablation",
+    "run_temporal_penalty_ablation",
     "MultiSeedResult",
     "RegimeDefinition",
     "run_frequentist_seed_comparison",

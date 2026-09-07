@@ -19,14 +19,13 @@ The adaptation is not a direct reuse of classification ECE. Continuous multivari
 
 The primary question is:
 
-> Does direct calibration-aware training improve multivariate probabilistic RNN forecasts, and does that improvement persist under temporal and distributional shift without an unacceptable loss of sharpness or predictive accuracy?
+> How does augmenting a likelihood-trained Gaussian RNN with differentiable projected-PIT calibration penalties affect the calibration and predictive quality of one-step-ahead multivariate financial forecasts across chronological market regimes and relative to likelihood-only neural and VAR--GARCH benchmarks?
 
-The experiments address four supporting questions:
+The experiments address three supporting questions:
 
-1. How does the calibration weight affect calibration, proper predictive scores, sharpness, and point accuracy?
-2. Does calibration-aware Bayesian learning behave differently from its frequentist counterpart in sequential data?
-3. Does explicitly penalizing temporal dependence in probability integral transforms improve sequential forecast adequacy?
-4. How rapidly do the four models deteriorate under volatility, dependence, tail, nonlinear, and structural changes?
+1. What tradeoff arises between projected calibration error and proper predictive scores as the projected-calibration weight changes?
+2. What does removing the temporal PIT-moment penalty reveal about its effect on calibration, Energy Score, interval score, coverage, and point accuracy?
+3. Does CA-RNN add forecast value on the development and frozen external asset panels, and how does its performance vary across chronological market regimes?
 
 ## Predictive model
 
@@ -88,9 +87,9 @@ $$
 
 where $\sigma$ is the logistic function and $\tau>0$ controls the differentiable approximation to the empirical CDF.
 
-## Sequential calibration
+## Temporal PIT-moment calibration
 
-Uniform PIT values can still contain temporal structure. The sequential extension penalizes their lagged covariance:
+Uniform PIT values can still contain temporal structure. CA-RNN therefore penalizes their lagged covariance:
 
 $$
 \mathcal L_{\mathrm{seq}}
@@ -115,7 +114,9 @@ $$
 }
 $$
 
-The main CA-RNN comparison initially sets $\lambda_{\mathrm{seq}}=0$ to match the reference paper's calibration-aware design. The sequential term is introduced as a separate ablation and extension.
+Both calibration components are part of CA-RNN. Setting
+$\lambda_{\mathrm{seq}}=0$ is used only as a loss-component ablation and is
+described as CA-RNN with its temporal penalty removed.
 
 ## Bayesian formulation
 
@@ -204,7 +205,7 @@ notebooks/
 ├── 01_data_and_dgps.ipynb
 ├── 02_four_model_comparison.ipynb
 ├── 03_calibration_weight_sweep.ipynb
-├── 04_sequential_calibration_ablation.ipynb
+├── 04_temporal_penalty_ablation.ipynb
 ├── 05_distribution_shift.ipynb
 ├── 06_financial_application.ipynb
 ├── 07_results_summary.ipynb

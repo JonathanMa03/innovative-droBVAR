@@ -1,4 +1,4 @@
-"""Focused optimization-seed experiment for frequentist CA-RNN variants."""
+"""Focused optimization-seed experiment for CA-RNN and its ablation."""
 
 from dataclasses import dataclass, replace
 from datetime import date
@@ -76,9 +76,13 @@ def run_frequentist_seed_comparison(
     forecast_seed: int = 20_606,
     n_forecast_samples: int = 500,
     device: str = "cpu",
-    models: tuple[str, ...] = ("RNN", "CA-RNN", "CA-RNN sequential"),
+    models: tuple[str, ...] = (
+        "RNN",
+        "CA-RNN (temporal penalty removed)",
+        "CA-RNN",
+    ),
 ) -> MultiSeedResult:
-    """Refit RNN, CA-RNN, and sequential CA-RNN over matched seeds.
+    """Refit RNN, CA-RNN, and the temporal-penalty ablation over matched seeds.
 
     Within a seed, all models share initial parameters, data order, projection
     directions, and predictive random numbers. Only the objective changes.
@@ -102,8 +106,8 @@ def run_frequentist_seed_comparison(
     target = target_tensor.numpy()
     available = {
         "RNN": (0.0, 0.0),
-        "CA-RNN": (lambda_cal, 0.0),
-        "CA-RNN sequential": (lambda_cal, lambda_seq),
+        "CA-RNN (temporal penalty removed)": (lambda_cal, 0.0),
+        "CA-RNN": (lambda_cal, lambda_seq),
     }
     if len(set(models)) != len(models) or not models:
         raise ValueError("models must contain distinct supported specifications")
@@ -196,8 +200,8 @@ def run_regime_seed_comparison(
     target = target_tensor.numpy()
     specifications = {
         "RNN": (0.0, 0.0),
-        "CA-RNN": (lambda_cal, 0.0),
-        "CA-RNN sequential": (lambda_cal, lambda_seq),
+        "CA-RNN (temporal penalty removed)": (lambda_cal, 0.0),
+        "CA-RNN": (lambda_cal, lambda_seq),
     }
     rows: list[dict[str, float | int | str]] = []
     histories = {}
